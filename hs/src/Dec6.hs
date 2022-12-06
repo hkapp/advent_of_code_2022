@@ -1,5 +1,7 @@
 module Dec6 (run) where
 
+import Test(test)
+
 import Data.List(foldl')
 
 run :: String -> IO ()
@@ -56,16 +58,6 @@ unitTest :: IO ()
 unitTest =
   do
     validateExample
-
-test :: (Eq a, Show a) => String -> a -> a -> IO ()
-test message expected found =
-  if expected == found
-    then return ()
-    else
-      do
-        putStrLn $ "[FAIL] " ++ message
-        putStrLn $ "Expected: " ++ (show expected)
-        putStrLn $ "Found:    " ++ (show found)
 
 examples = [
   "mjqjpqmgbljsphdztnvjfqwrcgsmlb",

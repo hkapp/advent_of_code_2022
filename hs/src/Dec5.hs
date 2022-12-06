@@ -1,5 +1,8 @@
 module Dec5 (run) where
 
+import Utils(splitFirstSep)
+import Test(test)
+
 import Data.Bifunctor(bimap)
 import Data.List(unfoldr, transpose, foldl')
 import Data.Char(isSpace, isDigit)
@@ -21,11 +24,6 @@ run input =
 
 
 parse lines = bimap parseDocks parseMoves $ splitFirstSep [] lines
-
-splitFirstSep :: (Eq a) => a -> [a] -> ([a], [a])
-splitFirstSep elem xs =
-  let (prefix, suffix) = span ((/=) elem) xs
-  in (prefix, tail suffix)
 
 type Harbour = Map Int Docks
 type Docks = Stack Crate
@@ -153,16 +151,6 @@ unitTest :: IO ()
 unitTest =
   do
     validateExample
-
-test :: (Eq a, Show a) => String -> a -> a -> IO ()
-test message expected found =
-  if expected == found
-    then return ()
-    else
-      do
-        putStrLn $ "[FAIL] " ++ message
-        putStrLn $ "Expected: " ++ (show expected)
-        putStrLn $ "Found:    " ++ (show found)
 
 example = [
   "    [D]    ",
