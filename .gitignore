@@ -2,3 +2,9 @@
 
 Dec2/target
 Dec2/Cargo.lock
+
+# Haskell compiler output
+
+*.hi
+*.o
+Main
