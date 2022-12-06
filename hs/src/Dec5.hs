@@ -9,21 +9,16 @@ import Data.Map(Map, (!))
 import qualified Data.Map as Map
 import Control.Monad.State(State, get, put, evalState)
 
-run :: IO ()
-run =
+run :: String -> IO ()
+run input =
   do
     unitTest
-    lines <- readLines
-    let gameInput = parse lines
+    let gameInput = parse $ lines input
     putStrLn "Task 1:"
     print $ uncurry task1 gameInput
     putStrLn "Task 2:"
     print $ uncurry task2 gameInput
 
-filename = "../../data/day5.data.txt"
-
-readLines :: IO [String]
-readLines = lines <$> readFile filename
 
 parse lines = bimap parseDocks parseMoves $ splitFirstSep [] lines
 

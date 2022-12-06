@@ -2,17 +2,14 @@ module Dec6 (run) where
 
 import Data.List(foldl')
 
-run :: IO ()
-run =
+run :: String -> IO ()
+run input =
   do
     unitTest
-    input <- readFile filename
     putStrLn "Task 1:"
     print $ task1 input
     putStrLn "Task 2:"
     print $ task2 input
-
-filename = "../../data/day6.data.txt"
 
 process :: Int -> String -> Int
 process ndis = finalize . foldl' (signalOne ndis) newReader
