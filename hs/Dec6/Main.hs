@@ -1,5 +1,7 @@
 import Data.List(foldl')
 
+import ../Utils
+
 main :: IO ()
 main =
   do

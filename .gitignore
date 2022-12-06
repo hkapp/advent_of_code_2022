@@ -1,7 +1,7 @@
 # Rust output files
 
-Dec2/target
-Dec2/Cargo.lock
+rs/Dec2/target
+rs/Dec2/Cargo.lock
 
 # Haskell compiler output
 
