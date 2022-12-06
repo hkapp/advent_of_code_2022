@@ -1,7 +1,5 @@
 import Data.List(foldl')
 
-import ../Utils
-
 main :: IO ()
 main =
   do
@@ -12,7 +10,7 @@ main =
     putStrLn "Task 2:"
     print $ task2 input
 
-filename = "day6.data.txt"
+filename = "../../data/day6.data.txt"
 
 process :: Int -> String -> Int
 process ndis = finalize . foldl' (signalOne ndis) newReader

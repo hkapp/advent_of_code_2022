@@ -18,7 +18,7 @@ main =
     putStrLn "Task 2:"
     print $ uncurry task2 gameInput
 
-filename = "day5.data.txt"
+filename = "../../data/day5.data.txt"
 
 readLines :: IO [String]
 readLines = lines <$> readFile filename
