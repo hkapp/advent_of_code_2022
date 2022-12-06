@@ -1,3 +1,5 @@
+module Dec5 (run) where
+
 import Data.Bifunctor(bimap)
 import Data.List(unfoldr, transpose, foldl')
 import Data.Char(isSpace, isDigit)
@@ -7,8 +9,8 @@ import Data.Map(Map, (!))
 import qualified Data.Map as Map
 import Control.Monad.State(State, get, put, evalState)
 
-main :: IO ()
-main =
+run :: IO ()
+run =
   do
     unitTest
     lines <- readLines

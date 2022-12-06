@@ -1,10 +1,10 @@
 # Rust output files
 
-rs/Dec2/target
-rs/Dec2/Cargo.lock
+rs/*/target
+rs/*/Cargo.lock
 
 # Haskell compiler output
 
 *.hi
 *.o
-Main
+hs/bin

@@ -1,7 +1,9 @@
+module Dec6 (run) where
+
 import Data.List(foldl')
 
-main :: IO ()
-main =
+run :: IO ()
+run =
   do
     unitTest
     input <- readFile filename
