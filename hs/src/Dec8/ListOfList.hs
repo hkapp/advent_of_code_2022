@@ -1,4 +1,4 @@
-module Dec8 (run) where
+module Dec8.ListOfList (run) where
 
 import Test(test)
 

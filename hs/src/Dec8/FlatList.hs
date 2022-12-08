@@ -1,9 +1,10 @@
-module Dec8 (run) where
+module Dec8.FlatList (run) where
 
 import Test(test)
 
-import Data.List(transpose, unfoldr)
+import Data.List(transpose, unfoldr, sortOn)
 import Data.Bifunctor(second)
+import Data.Ord(Down(..))
 
 run :: String -> IO ()
 run input =
@@ -92,16 +93,31 @@ hidden forest tree =
 
 {- Task 2 -}
 
--- task2 :: Forest -> Int
-task2 forest = "not implemented"
+task2 :: Forest -> Int
+task2 forest = maximum $ grade <$> forest
+  where grade start = product $ viewingDistance start <$> orderedNeighbours forest start
 
 viewingDistance :: Tree -> [Tree] -> Int
 viewingDistance _     [] = 0
-viewingDistance start ts = 1 + length $ takeWhile (shorterThan start) ts
+viewingDistance start ts = 1 + (length $ takeWhile (shorterThan start) ts)
   where shorterThan t1 t2 = height t2 < height t1
 
 orderedNeighbours :: Forest -> Tree -> [[Tree]]
-orderedNeighbours (l:r:u:d:[]) = []
+orderedNeighbours forest start =
+  case neighbours forest start of
+    (l:r:u:d:[]) ->
+      let
+        leftOrdering  (Tree x _ _) = Down x
+        rightOrdering (Tree x _ _) = x
+        upOrdering    (Tree _ y _) = Down y
+        downOrdering  (Tree _ y _) = y
+      in
+        [
+          sortOn leftOrdering l,
+          sortOn rightOrdering r,
+          sortOn upOrdering u,
+          sortOn downOrdering d
+        ]
 
 {- Unit Test -}
 
@@ -125,7 +141,7 @@ validateExample :: IO ()
 validateExample =
   do
     test "task1 example" 21 (task1 exampleForest)
-    -- test "task2 example" 24933642 (task2 exampleFs)
+    test "task2 example" 8 (task2 exampleForest)
 
 testHidden :: IO ()
 testHidden =
