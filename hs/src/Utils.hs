@@ -16,3 +16,6 @@ splitSep :: (Eq a) => a -> [a] -> [[a]]
 splitSep sep = unfoldr f
   where f [] = Nothing
         f xs = Just $ splitFirstSep sep xs
+
+(<$$>) :: (a -> b) -> [[a]] -> [[b]]
+(<$$>) f = map (map f)

@@ -1,6 +1,7 @@
 module Dec8.FlatList (run) where
 
 import Test(test)
+import Utils((<$$>))
 
 import Data.List(transpose, unfoldr, sortOn)
 import Data.Bifunctor(second)
@@ -18,6 +19,13 @@ run input =
 
 {- Parsing -}
 
+{-
+  0 --y-->
+  |
+  x
+  |
+  V
+-}
 type Forest = [Tree]
 data Tree = Tree {
   posx   :: Int,
@@ -94,23 +102,25 @@ hidden forest tree =
 {- Task 2 -}
 
 task2 :: Forest -> Int
-task2 forest = maximum $ grade <$> forest
-  where grade start = product $ viewingDistance start <$> orderedNeighbours forest start
+task2 forest = maximum $ scenicScore forest <$> forest
+
+scenicScore :: Forest -> Tree -> Int
+scenicScore forest start = product $ viewingDistance start <$> orderedNeighbours forest start
 
 viewingDistance :: Tree -> [Tree] -> Int
-viewingDistance _     [] = 0
-viewingDistance start ts = 1 + (length $ takeWhile (shorterThan start) ts)
-  where shorterThan t1 t2 = height t2 < height t1
+viewingDistance _     []     = 0
+viewingDistance start (t:ts) | height t >= height start = 1
+viewingDistance start (t:ts) = 1 + (viewingDistance start ts)
 
 orderedNeighbours :: Forest -> Tree -> [[Tree]]
 orderedNeighbours forest start =
   case neighbours forest start of
     (l:r:u:d:[]) ->
       let
-        leftOrdering  (Tree x _ _) = Down x
-        rightOrdering (Tree x _ _) = x
-        upOrdering    (Tree _ y _) = Down y
-        downOrdering  (Tree _ y _) = y
+        leftOrdering  = Down . posy
+        rightOrdering = posy
+        upOrdering    = Down . posx
+        downOrdering  = posx
       in
         [
           sortOn leftOrdering l,
@@ -124,7 +134,11 @@ orderedNeighbours forest start =
 unitTest :: IO ()
 unitTest =
   do
+    testForest
     testHidden
+    testOrderedNeighbours
+    testViewingDistance
+    testScenicScore
     validateExample
 
 example = unlines [
@@ -148,3 +162,29 @@ testHidden =
   do
     hid (Tree 0 0 3) False
   where hid t e = test ("hidden (" ++ show t ++ ")") e (hidden exampleForest t)
+
+testOrderedNeighbours :: IO ()
+testOrderedNeighbours =
+  do
+    test "orderedNeighbours (Tree 2 1 5)" [[6], [3, 3, 2], [5, 0], [3, 5]] (height <$$> orderedNeighbours exampleForest (Tree 2 1 5))
+
+testForest :: IO ()
+testForest =
+  do
+    test "forest[0][1]" 0 (height $ head $ filter (\(Tree x y _) -> x == 0 && y == 1) exampleForest)
+    test "forest[..][1]" [0, 5, 5, 3, 5] (height <$> filter (\(Tree _ y _) -> y == 1) exampleForest)
+
+testViewingDistance :: IO ()
+testViewingDistance =
+  do
+    test "viewingDistance Up (2, 1)" 1 (viewingDistance start $ (orderedNeighbours exampleForest start) !! 2)
+    test "viewingDistance Down (2, 1)" 2 (viewingDistance start $ (orderedNeighbours exampleForest start) !! 3)
+    test "viewingDistance Left (2, 1)" 1 (viewingDistance start $ (orderedNeighbours exampleForest start) !! 0)
+    test "viewingDistance Right (2, 1)" 3 (viewingDistance start $ (orderedNeighbours exampleForest start) !! 1)
+    where start = Tree 2 1 5
+
+testScenicScore :: IO ()
+testScenicScore =
+  do
+    test "scenicScore (1, 2)" 4 (scenicScore exampleForest (Tree 1 2 5))
+    test "scenicScore (3, 2)" 8 (scenicScore exampleForest (Tree 3 2 5))
