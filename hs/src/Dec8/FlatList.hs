@@ -1,7 +1,7 @@
 module Dec8.FlatList (run) where
 
 import Test(test)
-import Utils((<$$>), zipWithIndex)
+import Utils((<$$>), zipSquareWithIndex)
 
 import Data.List(transpose, unfoldr, sortOn)
 import Data.Bifunctor(second)
@@ -45,14 +45,6 @@ intoForest rows = intoTree <$> zipSquareWithIndex rows
 
 intoTree :: (Int, Int, Int) -> Tree
 intoTree (x, y, h) = Tree x y h
-
-zipSquareWithIndex :: [[a]] -> [(Int, Int, a)]
-zipSquareWithIndex xs =
-  let
-    withColIdx = map zipWithIndex xs
-    withOuterRowIdx = zipWithIndex withColIdx
-  in
-    (\(ri, rx) -> map (\(ci, y) -> (ri, ci, y)) rx) =<< withOuterRowIdx
 
 {- Forest -}
 

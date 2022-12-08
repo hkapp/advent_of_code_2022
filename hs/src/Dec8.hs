@@ -3,6 +3,7 @@ module Dec8 (run) where
 import qualified Dec8.FlatList    as FlatList
 import qualified Dec8.ListOfList  as ListOfList
 import qualified Dec8.ArrayOfList as ArrayOfList
+import qualified Dec8.Array       as Array
 
 import Data.Time.Clock(getCurrentTime, diffUTCTime, nominalDiffTimeToSeconds)
 
@@ -15,6 +16,7 @@ measureAll filename =
     measure "FlatList"    $ FlatList.run filename
     measure "ListOfList"  $ ListOfList.run filename
     measure "ArrayOfList" $ ArrayOfList.run filename
+    measure "Array"       $ Array.run filename
 
 measure :: String -> IO () -> IO ()
 measure name compute =

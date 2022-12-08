@@ -24,3 +24,11 @@ zipWithIndex :: [a] -> [(Int, a)]
 zipWithIndex = z 0
   where z n (x:xs) = (n, x):(z (n+1) xs)
         z _ []     = []
+
+zipSquareWithIndex :: [[a]] -> [(Int, Int, a)]
+zipSquareWithIndex xs =
+  let
+    withColIdx = map zipWithIndex xs
+    withOuterRowIdx = zipWithIndex withColIdx
+  in
+    (\(ri, rx) -> map (\(ci, y) -> (ri, ci, y)) rx) =<< withOuterRowIdx
