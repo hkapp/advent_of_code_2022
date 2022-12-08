@@ -19,3 +19,8 @@ splitSep sep = unfoldr f
 
 (<$$>) :: (a -> b) -> [[a]] -> [[b]]
 (<$$>) f = map (map f)
+
+zipWithIndex :: [a] -> [(Int, a)]
+zipWithIndex = z 0
+  where z n (x:xs) = (n, x):(z (n+1) xs)
+        z _ []     = []

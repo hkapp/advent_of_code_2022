@@ -1,7 +1,7 @@
 module Dec8.FlatList (run) where
 
 import Test(test)
-import Utils((<$$>))
+import Utils((<$$>), zipWithIndex)
 
 import Data.List(transpose, unfoldr, sortOn)
 import Data.Bifunctor(second)
@@ -53,11 +53,6 @@ zipSquareWithIndex xs =
     withOuterRowIdx = zipWithIndex withColIdx
   in
     (\(ri, rx) -> map (\(ci, y) -> (ri, ci, y)) rx) =<< withOuterRowIdx
-
-zipWithIndex :: [a] -> [(Int, a)]
-zipWithIndex = z 0
-  where z n (x:xs) = (n, x):(z (n+1) xs)
-        z _ []     = []
 
 {- Forest -}
 
