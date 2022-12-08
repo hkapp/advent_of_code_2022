@@ -68,21 +68,8 @@ parseFile (szStr:filename:[]) = BashFile (read szStr) filename
 
 {- File system -}
 
--- type Fs = Dir
--- type Path = [String]
-
--- data Dir = Dir [Dir] [File]
-
--- data File = File Int String
-
--- buildFs :: [BashLine] -> Fs
--- buildFs (BashCd $ CdRoot):xs = buildDir [] xs
-
--- buildDir :: [BashLine] -> Dir
--- buildDir =
-
 type Fs = Map Path INode
-{- Careful! We use the list as a stack here, so the path is given by reverse Path-}
+{- Careful! We use the list as a stack here, so the bash path is given by reverse Path -}
 newtype Path = Path [String]
   deriving (Ord, Eq, Show)
 data INode = Dir | File Int
