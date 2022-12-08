@@ -11,9 +11,13 @@ run input =
     unitTest
     let forest = parse input
     putStrLn "Task 1:"
-    print $ task1 forest
+    let res1 = task1 forest
+    test "task1 realInput" 1533 res1
+    print $ res1
     putStrLn "Task 2:"
-    print $ task2 forest
+    let res2 = task2 forest
+    test "task2 realInput" 345744 res2
+    print $ res2
 
 {- Parsing -}
 
@@ -40,8 +44,8 @@ data Tree = Tree Int Int
 neighbourHeights :: Forest -> Tree -> [[Int]]
 neighbourHeights (Forest rows cols) (Tree x y) =
   let
-    (left, right) = splitAtAndDrop (rows !! y) x
-    (top, down) = splitAtAndDrop (cols !! x) y
+    (left, right) = splitAtAndDrop (rows !! x) y
+    (top, down) = splitAtAndDrop (cols !! y) x
   in
     [left, right, top, down]
 
@@ -52,13 +56,15 @@ splitAtAndDrop xs idx = second tail $ splitAt idx xs
 {- Task 1 -}
 
 task1 :: Forest -> Int
-task1 forest =
+task1 forest = length $ filter (visible forest) $ allTrees forest
+
+allTrees :: Forest -> [Tree]
+allTrees forest =
   let
     irow = indexes $ trows forest
     icol = indexes $ tcols forest
-    trees = (uncurry Tree) <$> allCombinations irow icol
   in
-    length $ filter (visible forest) trees
+    (uncurry Tree) <$> allCombinations irow icol
 
 allCombinations :: [a] -> [b] -> [(a, b)]
 allCombinations xs ys =
@@ -81,24 +87,40 @@ hidden :: Forest -> Tree -> Bool
 hidden forest tree =
   let
     myHeight = treeHeight forest tree
-    partiallyVisible = all (\h -> h >= myHeight)
+    partiallyHidden = any (\h -> h >= myHeight)
   in
-    all partiallyVisible $ neighbourHeights forest tree
+    all partiallyHidden $ neighbourHeights forest tree
 
 treeHeight :: Forest -> Tree -> Int
 treeHeight forest (Tree x y) = (trows forest !! x) !! y
 
 {- Task 2 -}
 
--- task2 :: Forest -> Int
-task2 forest = "not implemented"
+task2 :: Forest -> Int
+task2 forest = maximum $ scenicScore forest <$> allTrees forest
+
+scenicScore :: Forest -> Tree -> Int
+scenicScore forest start = product $ viewingDistance (treeHeight forest start) <$> observeNeighbours forest start
+
+type Height = Int
+
+viewingDistance :: Height -> [Height] -> Int
+viewingDistance _     []                = 0
+viewingDistance orig (h:hs) | h >= orig = 1
+viewingDistance orig (h:hs)             = 1 + (viewingDistance orig hs)
+
+observeNeighbours :: Forest -> Tree -> [[Height]]
+observeNeighbours forest start =
+  case neighbourHeights forest start of
+    (l:r:u:d:[]) -> [reverse l, r, reverse u, d]
 
 {- Unit Test -}
 
 unitTest :: IO ()
 unitTest =
   do
-    testHidden
+    testNeighbourHeights
+    testVisibleHidden
     validateExample
 
 example = unlines [
@@ -115,10 +137,29 @@ validateExample :: IO ()
 validateExample =
   do
     test "task1 example" 21 (task1 exampleForest)
-    -- test "task2 example" 24933642 (task2 exampleFs)
+    test "task2 example" 8 (task2 exampleForest)
 
-testHidden :: IO ()
-testHidden = return ()
-  -- do
-    -- hid (Tree 0 0 3) False
-  -- where hid t e = test ("hidden (" ++ show t ++ ")") e (hidden exampleForest t)
+testNeighbourHeights :: IO ()
+testNeighbourHeights =
+  do
+    test "neighbourHeights (2, 1)" [[6], [3, 3, 2], [0, 5], [3, 5]] (neighbourHeights exampleForest (Tree 2 1))
+    test "neighbourHeights (2, 2)" [[6, 5], [3, 2], [3, 5], [5, 3]] (neighbourHeights exampleForest (Tree 2 2))
+
+testVisibleHidden =
+  do
+    vis 1 1
+    vis 1 2
+    hid 1 3
+
+    vis 2 1
+    hid 2 2
+    vis 2 3
+
+    hid 3 1
+    vis 3 2
+    hid 3 3
+  where
+    vis = vh "visible" visible
+    hid = vh "hidden" hidden
+
+    vh fname f x y = test (fname ++ " " ++ show (x, y)) True (f exampleForest (Tree x y))
