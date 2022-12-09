@@ -5,7 +5,7 @@ import qualified Dec8.ListOfList  as ListOfList
 import qualified Dec8.ArrayOfList as ArrayOfList
 import qualified Dec8.Array       as Array
 
-import Data.Time.Clock(getCurrentTime, diffUTCTime, nominalDiffTimeToSeconds)
+import Data.Time.Clock(getCurrentTime, diffUTCTime)
 
 run :: String -> IO ()
 run = measureAll
@@ -31,4 +31,4 @@ measure name compute =
     putStrLn $ "Duration: " ++ show duration ++ "ms"
     putStrLn sep
 
-toMillis dt = (nominalDiffTimeToSeconds dt) * 1000
+toMillis dt = dt * 1000
