@@ -46,17 +46,17 @@ intoMove = uncurry Move
 {- Task 1 -}
 
 task1 :: [Move] -> Int
-task1 = countDistinctTailPos
+task1 = countDistinctTailPos startKnot
 
-class Physics where
-  next :: Self -> Dir -> Self
-  origin :: Self
-  tailPos :: Self -> Pos
+class Physics a where
+  motion  :: a -> Dir -> a
+  tailPos :: a -> Pos
 
-coundDistinctTailPos :: (Physics a) -> a -> [Moves] -> Int
+countDistinctTailPos :: (Physics a) => a -> [Move] -> Int
+countDistinctTailPos start moves =
   let
-    knotSeq    = applyAll moves startKnot
-    tailPosSeq = ktail <$> knotSeq
+    knotSeq    = applyAll moves start
+    tailPosSeq = tailPos <$> knotSeq
   in
     length $ Set.fromList tailPosSeq
 
@@ -64,6 +64,10 @@ data Knot = Knot Pos Pos
   deriving (Eq, Show)
 
 type Pos = (Int, Int)
+
+instance Physics Knot where
+  motion  = moveKnot
+  tailPos = ktail
 
 khead :: Knot -> Pos
 khead (Knot h _) = h
@@ -77,12 +81,10 @@ origin = (0, 0)
 startKnot :: Knot
 startKnot = Knot origin origin
 
-applyAll :: [Move] -> Knot -> [Knot]
+-- applyAll :: [Move] -> Knot -> [Knot]
 -- applyAll moves start = start : (evalState (simulate stepKnot moves) start)
-applyAll moves start = runSimulation moveKnot start moves
-
-runSimulation :: (a -> Dir -> a) -> a -> [Move] -> [a]
-runSimulation next start moves = start : (evalState (simulate (step next) moves) start)
+applyAll :: (Physics a) => [Move] -> a -> [a]
+applyAll moves start = start : (evalState (simulate (step motion) moves) start)
 
 simulate :: (Dir -> State a a) -> [Move] -> State a [a]
 simulate advance moves = traverse advance (moves >>= explicitMove)
@@ -149,19 +151,28 @@ decideDir (xdif, ydif) = decideDir (xdif, 0) ++ decideDir (0, ydif)
 
 {- Task 2 -}
 
--- task2 :: [Move] -> Int
-task2 _ = "not implemented"
+task2 :: [Move] -> Int
+task2 = countDistinctTailPos (WRope startRope)
 
 type Rope = [Pos]
+newtype WRope = WRope Rope
 
-startRope :: Int -> Rope
-startRope n = take n $ repeat origin
+instance Physics WRope where
+  motion (WRope rope)  = WRope . moveRope rope
+  tailPos (WRope rope) = last rope
+
+startRope :: Rope
+startRope = take 10 $ repeat origin
 
 moveRope :: Rope -> Dir -> Rope
-moveRope (p:ps) dir = followAll $ (move dir p):ps
+moveRope (p:ps) dir = followAll $ (move p dir):ps
 
 followAll :: Rope -> Rope
-followAll (p1:p2:ps) = p1:(follow p2 p1):(followAll ps)
+followAll (p1:p2:ps) =
+  let
+    p2' = ktail $ follow p2 p1
+  in
+    p1:(followAll $ p2':ps)
 followAll ps         = ps
 
 {- Unit Test -}
@@ -171,8 +182,9 @@ unitTest =
   do
     testMdist
     testMoveKnot
+    testMoveRope
     testApplyAll
-    validateExample
+    validateExamples
 
 example = unlines [
   "R 4",
@@ -187,13 +199,27 @@ example = unlines [
 
 exampleMoves = parse example
 
-validateExample :: IO ()
-validateExample =
+example2 = unlines [
+  "R 5",
+  "U 8",
+  "L 8",
+  "D 3",
+  "R 17",
+  "D 10",
+  "L 25",
+  "U 20"
+  ]
+
+exampleMoves2 = parse example2
+
+validateExamples :: IO ()
+validateExamples =
   do
     test "task1 example" 13 (task1 exampleMoves)
-    -- test "task2 example" 24933642 (task2 exampleMoves)
+    test "task2 example" 1 (task2 exampleMoves)
+    test "task2 example2" 36 (task2 exampleMoves2)
 
-exampleStateTransition = [
+exampleStateTransitionTask1 = [
   startKnot,
   -- R 4 --
   Knot (1, 0) (0, 0),
@@ -211,9 +237,27 @@ exampleStateTransition = [
   Knot (1, 4) (2, 4)
   ]
 
+exampleStateTransitionTask2 = [
+  startRope,
+  -- R 4 --
+  startWith [(1, 0)],
+  startWith [(2, 0), (1, 0)],
+  startWith [(3, 0), (2, 0), (1, 0)]
+  -- startWith [(4, 0), (3, 0), (2, 0), (1, 0)]
+  ]
+  where
+    startWith xs = xs ++ drop (length xs) startRope
+
 testApplyAll =
   do
-    test ("applyAll (" ++ show (length exampleStateTransition) ++ ")") exampleStateTransition (take (length exampleStateTransition) $ applyAll exampleMoves startKnot)
+    taa startKnot exampleStateTransitionTask1 id
+    taa (WRope startRope) exampleStateTransitionTask2 (\(WRope r) -> r)
+  where
+    taa start expected feq =
+      let
+        n = length expected
+      in
+        test  ("applyAll (" ++ show n ++ ")") expected (feq <$> (take n $ applyAll exampleMoves start))
 
 testMdist =
   do
@@ -227,3 +271,7 @@ testMoveKnot =
     let dir = Left
     test "moveKnot Left (3, 4) (4, 3)" end (moveKnot start dir)
     test "follow (2, 4) (4, 3)" end (follow (ktail start) (khead end))
+
+testMoveRope =
+  do
+    test "followAll [(3, 0), (1, 0), (0, 0)]" [(3, 0), (2, 0), (1, 0)] (followAll [(3, 0), (1, 0), (0, 0)])
