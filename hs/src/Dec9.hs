@@ -46,7 +46,14 @@ intoMove = uncurry Move
 {- Task 1 -}
 
 task1 :: [Move] -> Int
-task1 moves =
+task1 = countDistinctTailPos
+
+class Physics where
+  next :: Self -> Dir -> Self
+  origin :: Self
+  tailPos :: Self -> Pos
+
+coundDistinctTailPos :: (Physics a) -> a -> [Moves] -> Int
   let
     knotSeq    = applyAll moves startKnot
     tailPosSeq = ktail <$> knotSeq
@@ -71,13 +78,20 @@ startKnot :: Knot
 startKnot = Knot origin origin
 
 applyAll :: [Move] -> Knot -> [Knot]
-applyAll moves start = start : (evalState (simulate moves) start)
+-- applyAll moves start = start : (evalState (simulate stepKnot moves) start)
+applyAll moves start = runSimulation moveKnot start moves
 
-simulate :: [Move] -> State Knot [Knot]
-simulate moves = traverse moveState (moves >>= explicitMove)
+runSimulation :: (a -> Dir -> a) -> a -> [Move] -> [a]
+runSimulation next start moves = start : (evalState (simulate (step next) moves) start)
 
-moveState :: Dir -> State Knot Knot
-moveState d = state (\k -> dup (moveKnot k d))
+simulate :: (Dir -> State a a) -> [Move] -> State a [a]
+simulate advance moves = traverse advance (moves >>= explicitMove)
+
+step :: (a -> Dir -> a) -> Dir -> State a a
+step next dir = state (\x -> dup (next x dir))
+
+-- stepKnot :: Dir -> State Knot Knot
+-- stepKnot = step moveKnot
 
 dup :: a -> (a, a)
 dup x = (x, x)
@@ -137,6 +151,18 @@ decideDir (xdif, ydif) = decideDir (xdif, 0) ++ decideDir (0, ydif)
 
 -- task2 :: [Move] -> Int
 task2 _ = "not implemented"
+
+type Rope = [Pos]
+
+startRope :: Int -> Rope
+startRope n = take n $ repeat origin
+
+moveRope :: Rope -> Dir -> Rope
+moveRope (p:ps) dir = followAll $ (move dir p):ps
+
+followAll :: Rope -> Rope
+followAll (p1:p2:ps) = p1:(follow p2 p1):(followAll ps)
+followAll ps         = ps
 
 {- Unit Test -}
 
