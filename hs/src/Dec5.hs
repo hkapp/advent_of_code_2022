@@ -1,6 +1,6 @@
 module Dec5 (run) where
 
-import Utils(splitFirstSep)
+import Utils(splitFirstSep, chunksOf)
 import Test(test)
 
 import Data.Bifunctor(bimap)
@@ -45,9 +45,7 @@ makeDockCols :: String -> [String]
 makeDockCols line = take 3 <$> splitEvery 4 line
 
 splitEvery :: Int -> [a] -> [[a]]
-splitEvery n = unfoldr f
-  where f [] = Nothing
-        f xs = Just $ splitAt n xs
+splitEvery = chunksOf
 
 {- "[Z]" -> Just 'Z'
    " 1 " -> Nothing

@@ -2,13 +2,13 @@ module Dec9 (run) where
 
 import Prelude hiding (Left, Right)
 
-import Utils(splitFirstSep)
+import Utils(splitFirstSep, evalStarting)
 import Test(test)
 
 import Data.List(foldl')
 import Data.Bifunctor(bimap)
 import qualified Data.Set as Set
-import Control.Monad.State(State, state, evalState)
+import Control.Monad.State(State, state)
 
 run :: String -> IO ()
 run input =
@@ -81,19 +81,14 @@ origin = (0, 0)
 startKnot :: Knot
 startKnot = Knot origin origin
 
--- applyAll :: [Move] -> Knot -> [Knot]
--- applyAll moves start = start : (evalState (simulate stepKnot moves) start)
 applyAll :: (Physics a) => [Move] -> a -> [a]
-applyAll moves start = start : (evalState (simulate (step motion) moves) start)
+applyAll moves start = evalStarting (simulate (step motion) moves) start
 
 simulate :: (Dir -> State a a) -> [Move] -> State a [a]
 simulate advance moves = traverse advance (moves >>= explicitMove)
 
 step :: (a -> Dir -> a) -> Dir -> State a a
 step next dir = state (\x -> dup (next x dir))
-
--- stepKnot :: Dir -> State Knot Knot
--- stepKnot = step moveKnot
 
 dup :: a -> (a, a)
 dup x = (x, x)
@@ -135,15 +130,11 @@ mdist (x, y) (x', y') = (x - x', y - y')
 
 decideDir :: (Int, Int) -> [Dir]
 
-decideDir (xdif, 0) | xdif /= 0 =
-  if xdif > 0
-    then [Right]
-    else [Left]
+decideDir (xdif, 0) | xdif > 0 = [Right]
+decideDir (xdif, 0) | xdif < 0 = [Left]
 
-decideDir (0, ydif) | ydif /= 0 =
-  if ydif > 0
-    then [Up]
-    else [Down]
+decideDir (0, ydif) | ydif > 0 = [Up]
+decideDir (0, ydif) | ydif < 0 = [Down]
 
 decideDir (0, 0) = []
 
