@@ -3,7 +3,7 @@ module Dec10 (run) where
 import Prelude hiding (Left, Right)
 
 import Test(test)
-import Utils(zipWithIndexStarting, evalStarting, chunksOf)
+import Utils(zipWithIndexStarting, evalStarting, chunksOf, flatten)
 
 import Control.Monad.State(State, state)
 
@@ -49,7 +49,7 @@ simInst inst = state (\r ->
     (stateSeq, last stateSeq))
 
 simulate :: [Inst] -> State Register [RegVal]
-simulate = fmap ((=<<) id) . sequence . map simInst
+simulate = fmap flatten . traverse simInst
 
 {- Task 1 -}
 

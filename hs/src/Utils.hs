@@ -1,7 +1,10 @@
 module Utils where
 
 import Data.List(unfoldr)
+import Data.Array.IArray(Array, array)
 import Control.Monad.State(State, evalState)
+import Control.Monad(join)
+import Control.Exception(assert)
 
 splitFirstSep :: (Eq a) => a -> [a] -> ([a], [a])
 splitFirstSep elem xs =
@@ -43,3 +46,30 @@ chunksOf :: Int -> [a] -> [[a]]
 chunksOf n = unfoldr f
   where f [] = Nothing
         f xs = Just $ splitAt n xs
+
+flatten :: (Monad m) => m (m a) -> m a
+flatten = join
+
+arrayFromIndexedList :: [(Int, a)] -> Array Int a
+arrayFromIndexedList xs =
+  let
+    indexes = fst <$> xs
+  in
+    array (minimum indexes, maximum indexes) xs
+
+stripPrefix :: String -> String -> String
+stripPrefix toStrip input =
+  let
+    stripLen = length toStrip
+    (prefix, remaining) = splitAt stripLen input
+  in
+    assert (prefix == toStrip) remaining
+
+stripSuffix :: String -> String -> String
+stripSuffix toStrip input =
+  let
+    stripLen = length toStrip
+    splitLen = (length input) - stripLen
+    (remaining, suffix) = splitAt splitLen input
+  in
+    assert (suffix == toStrip) remaining
