@@ -5,12 +5,16 @@ import Prelude hiding (round)
 import Utils(arrayFromIndexedList, splitSep, stripPrefix, stripSuffix, top)
 import Test(test)
 
+import Control.Monad(replicateM, replicateM_)
 import Control.Monad.State(State, evalState, state, get, put)
 import Data.Char(isDigit)
-import Data.Bifunctor(second)
+import Data.Bifunctor(first, second)
 import qualified Data.Map as Map
 import Data.Map(Map)
 import Data.List(transpose)
+import Data.Word(Word64)
+import Data.Foldable(traverse_)
+import System.Random(randomRIO)
 
 run :: String -> IO ()
 run input =
@@ -98,7 +102,7 @@ parseMonkey (idxLine:opLine:testLine:trueLine:falseLine:[]) =
 parseMIdx :: String -> MIdx
 parseMIdx = read . stripSuffix ":" . stripPrefix "Monkey "
 
-type Op = (Int -> Int)
+type Op = (Worry -> Worry)
 
 parseOp :: String -> Op
 parseOp = evalState $
@@ -114,7 +118,7 @@ parseOp = evalState $
 parserStrip :: String -> State String ()
 parserStrip prefix = state (\s -> ((), stripPrefix prefix s))
 
-type Operand = (Int -> Int)
+type Operand = (Worry -> Worry)
 
 parseOperand :: State String Operand
 parseOperand =
@@ -134,10 +138,10 @@ parseOperand =
 oldOperand :: Operand
 oldOperand = id
 
-numOperand :: Int -> Operand
+numOperand :: Worry -> Operand
 numOperand = const
 
-type Arithmetic = (Int -> Int -> Int)
+type Arithmetic = (Worry -> Worry -> Worry)
 
 parseArithmetic :: State String Arithmetic
 parseArithmetic =
@@ -152,7 +156,7 @@ makeOp :: Operand -> Arithmetic -> Operand -> Op
 makeOp leftOperand arithmetic rightOperand oldValue =
   (leftOperand oldValue) `arithmetic` (rightOperand oldValue)
 
-type DivTest = (Int -> Bool)
+type DivTest = (Worry -> Bool)
 
 parseDivTest :: String -> DivTest
 parseDivTest testLine x =
@@ -195,12 +199,25 @@ data Monkey = Monkey {
   inspect :: (Relief -> Item -> (Worry, MIdx))
   }
 
+assertMessage :: Bool -> a -> String -> a
+assertMessage cond val msg =
+  if not cond
+    then error msg
+    else val
+
 makeMonkey :: MIdx -> Op -> DivTest -> Outcome -> Outcome -> Monkey
 makeMonkey idx op divTest ifTrue ifFalse = Monkey idx buildInspect
   where buildInspect relief item =
           let
-            increasedWorry = op item
+            iw = op item
+            increasedWorry = assertMessage (iw > item) iw $ unlines [
+                                                              "Integer overflow detected: " ++ (show item) ++ " -> " ++ (show iw),
+                                                              "op 0 = " ++ (show $ op 0),
+                                                              "op 1 = " ++ (show $ op 1)
+                                                              ]
+
             reducedWorry = relief increasedWorry
+
             recipientMonkey =
               if divTest reducedWorry
                 then ifTrue
@@ -264,7 +281,7 @@ round :: Relief -> Troop -> State Hold MonkeyBusiness
 round relief = traverse (turn relief)
 
 repeatS :: Int -> State s a -> State s [a]
-repeatS n st = sequence $ take n $ repeat st
+repeatS = replicateM
 
 {- Task 1 -}
 
@@ -276,29 +293,80 @@ task1 troop = monkeyBusinessLevel 20 (round withRelief troop)
 
 monkeyBusinessLevel :: Int -> State Hold MonkeyBusiness -> Hold -> Int
 monkeyBusinessLevel nrounds singleRound hold =
-  product $ top 2 $ map sum $ transpose $ (flip evalState) hold $ repeatS nrounds singleRound
+  product $ top 2 $ totalMonkeyBusiness nrounds singleRound hold
+
+totalMonkeyBusiness :: Int -> State Hold MonkeyBusiness -> Hold -> [Int]
+totalMonkeyBusiness nrounds singleRound hold =
+  map sum $ transpose $ (flip evalState) hold $ repeatS nrounds singleRound
 
 {- Task 2 -}
 
-noRelief :: Relief
-noRelief = id
+type Magic = [Worry]
+
+task2Magic :: Magic
+task2Magic = [3, 13, 2, 11, 5, 17, 19, 7]
+
+reduceNumber :: Magic -> Worry -> Worry
+reduceNumber magicList w = validate (w `mod` magicNumber)
+  where magicNumber = product magicList
+        validate z = assertMessage (all (\m -> (w `mod` m) == (z `mod` m)) magicList) z $ ("The magic doesn't work on " ++ (show w))
+
+noReliefButManage :: Magic -> Relief
+noReliefButManage = reduceNumber
 
 task2 :: Troop -> Hold -> Int
-task2 troop = monkeyBusinessLevel 1000 (round noRelief troop)
+task2 = task2Param task2Magic 10000
+
+task2Param :: Magic -> Int -> Troop -> Hold -> Int
+task2Param magic nrounds troop = monkeyBusinessLevel nrounds (round (noReliefButManage magic) troop)
 
 {- Unit Test -}
 
 unitTest :: IO ()
 unitTest =
   do
-    validateExample
+    example <- exampleInput
+    let (troop, hold) = parse example
+    debug1 troop hold
+    validateExample troop hold
 
 exampleInput = readFile "../../data/day11.example.txt"
 
-validateExample :: IO ()
-validateExample =
+exampleMagic = [23, 19, 13, 17]
+
+validateExample :: Troop -> Hold -> IO ()
+validateExample troop hold =
   do
-    example <- exampleInput
-    let (troop, hold) = parse example
     test "task1 example" 10605 (task1 troop hold)
-    test "task2 example" 2713310158 (task2 troop hold)
+    test "task2 example (1 round)" (4*6) (task2Param exampleMagic 1 troop hold)
+    test "task2 example (20 rounds)" (99*103) (task2Param exampleMagic 20 troop hold)
+    test "task2 example (1000 rounds)" (5204*5192) (task2Param exampleMagic 1000 troop hold)
+    test "task2 example (10'000 rounds)" 2713310158 (task2Param exampleMagic 10000 troop hold)
+
+debug1 :: Troop -> Hold -> IO ()
+debug1 troop hold =
+  do
+    mbll [2, 4, 3, 6] 1
+    mbll [99, 97, 8, 103] 20
+    mbll [5204, 4792, 199, 5192] 1000
+    testRandomItems 100
+  where
+    mbll expected nrounds =
+      let
+        msg = "totalMonkeyBusiness after " ++ (show nrounds) ++ " rounds"
+        found = totalMonkeyBusiness nrounds (round (noReliefButManage exampleMagic) troop) hold
+      in
+        test msg expected found
+
+    testRandomItems nitems = replicateM_ nitems $
+                                do
+                                  let positive = (0, floor $ sqrt $ fromIntegral (maxBound :: Worry))
+                                  randItem <- randomRIO positive
+                                  traverse_ (\monkey ->
+                                    let
+                                      msg = "inspect (Monkey " ++ (show $ selfIdx monkey) ++ ") " ++ (show randItem)
+                                      expected = first (reduceNumber exampleMagic) (inspect monkey id randItem)
+                                      found = inspect monkey (noReliefButManage exampleMagic) randItem
+                                    in
+                                      test msg expected found
+                                    ) troop
