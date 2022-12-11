@@ -1,10 +1,11 @@
 module Utils where
 
-import Data.List(unfoldr)
 import Data.Array.IArray(Array, array)
+import Data.List(unfoldr, sort, sortOn)
+import Data.Ord(Down(..))
+
 import Control.Monad.State(State, evalState)
 import Control.Monad(join)
-import Control.Exception(assert)
 
 splitFirstSep :: (Eq a) => a -> [a] -> ([a], [a])
 splitFirstSep elem xs =
@@ -57,19 +58,34 @@ arrayFromIndexedList xs =
   in
     array (minimum indexes, maximum indexes) xs
 
-stripPrefix :: String -> String -> String
-stripPrefix toStrip input =
+{- First returned string is the stripped bit to compare
+   Second String argument is the expected stripped value
+-}
+stripBy :: (String -> (String, String)) -> String -> String -> String
+stripBy splitStr expected input =
   let
-    stripLen = length toStrip
-    (prefix, remaining) = splitAt stripLen input
+    (toCompare, remaining) = splitStr input
   in
-    assert (prefix == toStrip) remaining
+    if (toCompare /= expected)
+      then error $ "stripBy: stripped bit " ++ (show toCompare) ++ " did not match expected " ++ (show expected)
+      else remaining
+
+stripPrefix :: String -> String -> String
+stripPrefix toStrip = stripBy splitStr toStrip
+  where splitStr = splitAt (length toStrip)
 
 stripSuffix :: String -> String -> String
-stripSuffix toStrip input =
-  let
-    stripLen = length toStrip
-    splitLen = (length input) - stripLen
-    (remaining, suffix) = splitAt splitLen input
-  in
-    assert (suffix == toStrip) remaining
+stripSuffix toStrip = stripBy splitStr toStrip
+  where splitStr s =
+          let
+            stripLen = length toStrip
+            splitLen = (length s) - stripLen
+            (remaining, suffix) = splitAt splitLen s
+          in
+            (suffix, remaining)
+
+top :: (Ord a) => Int -> [a] -> [a]
+top n = take n . sortOn Down
+
+bot :: (Ord a) => Int -> [a] -> [a]
+bot n = take n . sort

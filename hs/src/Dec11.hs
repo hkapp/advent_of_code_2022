@@ -1,14 +1,16 @@
 module Dec11 (run) where
 
-import Prelude hiding (Left, Right)
+import Prelude hiding (round)
 
-import Utils(arrayFromIndexedList, splitSep, stripPrefix, stripSuffix)
+import Utils(arrayFromIndexedList, splitSep, stripPrefix, stripSuffix, top)
 import Test(test)
 
-import Data.Array.IArray(Array)
 import Control.Monad.State(State, evalState, state, get, put)
 import Data.Char(isDigit)
 import Data.Bifunctor(second)
+import qualified Data.Map as Map
+import Data.Map(Map)
+import Data.List(transpose)
 
 run :: String -> IO ()
 run input =
@@ -18,17 +20,46 @@ run input =
     putStrLn "Task 1:"
     print $ task1 troop hold
     putStrLn "Task 2:"
-    putStrLn $ task2 troop hold
+    print $ task2 troop hold
+
+{- Queue -}
+
+type Stack a = [a]
+data Queue a = Queue (Stack a) (Stack a)
+
+pushQ :: a -> Queue a -> Queue a
+pushQ elem (Queue popStack pushStack) = Queue popStack (elem:pushStack)
+
+popQ :: Queue a -> (a, Queue a)
+popQ (Queue popStack pushStack) =
+  case popStack of
+    [] ->
+      let
+        newPopStack = reverse pushStack
+      in
+        (head newPopStack, Queue (tail newPopStack) [])
+    (x:xs) ->
+      (x, Queue xs pushStack)
+
+nullQ :: Queue a -> Bool
+nullQ (Queue [] []) = True
+nullQ _             = False
+
+newQ :: Queue a
+newQ = Queue [] []
+
+{- Popping will get the elements in the same order as in the original list -}
+fromListQ :: [a] -> Queue a
+fromListQ xs = Queue xs []
+
+instance Show a => Show (Queue a) where
+  show (Queue popStack pushStack) = "Queue <" ++ (show (popStack ++ pushStack)) ++ "<"
 
 {- Parsing -}
 
-{- Warning! we use the Item list as a queue for efficient push
-   When reading it (for inspection), it needs to be reversed first
--}
-type Queue a = [Item]
-type Hold  = Array MIdx (Queue Item)
+type Hold  = Map MIdx (Queue Item)
 
-type Troop = Array MIdx Monkey
+type Troop = [Monkey]
 
 type MIdx  = Int
 type Item  = Worry
@@ -62,7 +93,7 @@ parseMonkey (idxLine:opLine:testLine:trueLine:falseLine:[]) =
     ifTrue = parseTrueCase trueLine
     ifFalse = parseFalseCase falseLine
   in
-    (idx, makeMonkey op divTest ifTrue ifFalse)
+    (idx, makeMonkey idx op divTest ifTrue ifFalse)
 
 parseMIdx :: String -> MIdx
 parseMIdx = read . stripSuffix ":" . stripPrefix "Monkey "
@@ -136,13 +167,13 @@ parseTrueCase :: String -> Outcome
 parseTrueCase = parseThrow . stripPrefix "    If true: "
 
 parseFalseCase :: String -> Outcome
-parseFalseCase = parseThrow . stripPrefix "    If true: "
+parseFalseCase = parseThrow . stripPrefix "    If false: "
 
 parseThrow :: String -> Outcome
 parseThrow = read . stripPrefix "throw to monkey "
 
 intoTroop :: [(MIdx, Monkey)] -> Troop
-intoTroop = arrayFromIndexedList
+intoTroop = map snd
 
 parseItems :: String -> [Item]
 parseItems itemLine = map read $ splitTwoChar ", " $ stripPrefix "  Starting items: " itemLine
@@ -151,7 +182,7 @@ parseItems itemLine = map read $ splitTwoChar ", " $ stripPrefix "  Starting ite
 
 {- See the note above Hold. We need to reverse the Item list in the Hold. -}
 intoHold :: [(MIdx, [Item])] -> Hold
-intoHold = arrayFromIndexedList . map (second reverse)
+intoHold = Map.fromList . map (second fromListQ)
 
 {- Monkey business -}
 
@@ -159,32 +190,101 @@ intoHold = arrayFromIndexedList . map (second reverse)
    Given an item, it knows how to compute the new worry for this item,
    and which monkey to throw it to.
 -}
-type Monkey = (Item -> (Worry, MIdx))
+data Monkey = Monkey {
+  selfIdx :: MIdx,
+  inspect :: (Relief -> Item -> (Worry, MIdx))
+  }
 
-makeMonkey :: Op -> DivTest -> Outcome -> Outcome -> Monkey
-makeMonkey op divTest ifTrue ifFalse item =
-  let
-    increasedWorry = op item
-    reducedWorry = relief increasedWorry
-    recipientMonkey =
-      if divTest reducedWorry
-        then ifTrue
-        else ifFalse
-  in
-    (reducedWorry, recipientMonkey)
+makeMonkey :: MIdx -> Op -> DivTest -> Outcome -> Outcome -> Monkey
+makeMonkey idx op divTest ifTrue ifFalse = Monkey idx buildInspect
+  where buildInspect relief item =
+          let
+            increasedWorry = op item
+            reducedWorry = relief increasedWorry
+            recipientMonkey =
+              if divTest reducedWorry
+                then ifTrue
+                else ifFalse
+          in
+            (reducedWorry, recipientMonkey)
 
-relief :: Worry -> Worry
-relief worry = worry `div` 3
+type Relief = Worry -> Worry
+
+inspectOnce :: Relief -> Monkey -> State Hold ()
+inspectOnce relief monkey =
+  do
+    hold <- get
+    currItem <- grabItem (selfIdx monkey)
+    let (newItemWorry, recipientMonkey) = inspect monkey relief currItem
+    throwItem newItemWorry recipientMonkey
+
+itemsHeldBy :: MIdx -> Hold -> Queue Item
+itemsHeldBy = flip (Map.!)
+
+grabItem :: MIdx -> State Hold Item
+grabItem monkeyIdx =
+  do
+    hold <- get
+    let itemsHeld = itemsHeldBy monkeyIdx hold
+    let (currItem, itemsHeldAfter) = popQ itemsHeld
+    let newHold = Map.insert monkeyIdx itemsHeldAfter hold
+    put newHold
+    return currItem
+
+throwItem :: Item -> MIdx -> State Hold ()
+throwItem item recipient =
+  do
+    hold <- get
+    put $ Map.adjust (pushQ item) recipient hold
+
+{- Make one monkey inspect all of its items
+   At the same time, we count how many items it's going through
+-}
+turn :: Relief -> Monkey -> State Hold Int
+turn relief monkey =
+  do
+    hold <- get
+    if hasItems (selfIdx monkey) hold
+      then return 0
+      else
+        do
+          inspectOnce relief monkey
+          countItemsInspected <- turn relief monkey
+          return (countItemsInspected + 1)
+
+hasItems :: MIdx -> Hold -> Bool
+hasItems monkeyIdx = nullQ . itemsHeldBy monkeyIdx
+
+type MonkeyBusiness = [Int]
+
+{- Make every monkey inspect every item it has, once per monkey, in order
+   Count how many items each monkey went through along the way
+-}
+round :: Relief -> Troop -> State Hold MonkeyBusiness
+round relief = traverse (turn relief)
+
+repeatS :: Int -> State s a -> State s [a]
+repeatS n st = sequence $ take n $ repeat st
 
 {- Task 1 -}
 
--- task1 :: Troop -> Hold -> Int
-task1 _ hold = hold
+withRelief :: Relief
+withRelief worry = worry `div` 3
+
+task1 :: Troop -> Hold -> Int
+task1 troop = monkeyBusinessLevel 20 (round withRelief troop)
+
+monkeyBusinessLevel :: Int -> State Hold MonkeyBusiness -> Hold -> Int
+monkeyBusinessLevel nrounds singleRound hold =
+  product $ top 2 $ map sum $ transpose $ (flip evalState) hold $ repeatS nrounds singleRound
 
 {- Task 2 -}
 
--- task2 :: [Inst] -> String
-task2 _ _ = "not implemented"
+noRelief :: Relief
+noRelief = id
+
+task2 :: Troop -> Hold -> Int
+task2 troop = monkeyBusinessLevel 1000 (round noRelief troop)
 
 {- Unit Test -}
 
@@ -193,12 +293,12 @@ unitTest =
   do
     validateExample
 
-example = readFile "../../data/day10.example.txt"
-
-exampleInsts = parse <$> example
+exampleInput = readFile "../../data/day11.example.txt"
 
 validateExample :: IO ()
-validateExample = return ()
-  -- do
-    -- insts <- exampleInsts
-    -- test "task1 example" 13140 (task1 insts)
+validateExample =
+  do
+    example <- exampleInput
+    let (troop, hold) = parse example
+    test "task1 example" 10605 (task1 troop hold)
+    test "task2 example" 2713310158 (task2 troop hold)
