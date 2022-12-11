@@ -15,6 +15,8 @@ import Data.List(transpose)
 import Data.Word(Word64)
 import Data.Foldable(traverse_)
 import System.Random(randomRIO)
+import Data.Sequence (Seq(..))
+import qualified Data.Sequence as Seq
 
 run :: String -> IO ()
 run input =
@@ -28,36 +30,20 @@ run input =
 
 {- Queue -}
 
-type Stack a = [a]
-data Queue a = Queue (Stack a) (Stack a)
+type Queue a = Seq a
 
 pushQ :: a -> Queue a -> Queue a
-pushQ elem (Queue popStack pushStack) = Queue popStack (elem:pushStack)
+pushQ = flip (Seq.|>)
 
 popQ :: Queue a -> (a, Queue a)
-popQ (Queue popStack pushStack) =
-  case popStack of
-    [] ->
-      let
-        newPopStack = reverse pushStack
-      in
-        (head newPopStack, Queue (tail newPopStack) [])
-    (x:xs) ->
-      (x, Queue xs pushStack)
+popQ (x:<|xs) = (x, xs)
 
 nullQ :: Queue a -> Bool
-nullQ (Queue [] []) = True
-nullQ _             = False
-
-newQ :: Queue a
-newQ = Queue [] []
+nullQ = null
 
 {- Popping will get the elements in the same order as in the original list -}
 fromListQ :: [a] -> Queue a
-fromListQ xs = Queue xs []
-
-instance Show a => Show (Queue a) where
-  show (Queue popStack pushStack) = "Queue <" ++ (show (popStack ++ pushStack)) ++ "<"
+fromListQ = Seq.fromList
 
 {- Parsing -}
 
@@ -184,7 +170,6 @@ parseItems itemLine = map read $ splitTwoChar ", " $ stripPrefix "  Starting ite
   where splitTwoChar (c1:c2:[]) = splitSep c1 . filter ((/=) c2)
   {- this doesn't work in general, but will work in this instance -}
 
-{- See the note above Hold. We need to reverse the Item list in the Hold. -}
 intoHold :: [(MIdx, [Item])] -> Hold
 intoHold = Map.fromList . map (second fromListQ)
 
