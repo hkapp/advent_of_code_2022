@@ -129,3 +129,7 @@ repeatUntil cond st =
     if cond (x, s)
       then return x
       else repeatUntil cond st
+
+intoPairs :: [a] -> [(a, a)]
+intoPairs (x:y:zs) = (x, y):(intoPairs zs)
+intoPairs []       = []
