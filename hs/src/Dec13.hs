@@ -42,7 +42,6 @@ newtype Package = Package [NestedValue Int]
   deriving Eq
 
 data NestedValue a = Value a | Nested [NestedValue a]
-  deriving Eq
 
 instance Ord Package where
   compare (Package nvx) (Package nvy) = compare (Nested nvx) (Nested nvy)
@@ -61,6 +60,9 @@ compareNested (x:xs) (y:ys) =
   if x == y
     then compareNested xs ys
     else compare x y
+
+instance (Ord a) => Eq (NestedValue a) where
+  x == y = (compare x y) == EQ
 
 {- Task 1 -}
 
@@ -148,6 +150,9 @@ debug2 =
     step "[3,[4,[5,6,7]]]" "[3,[4,[5,6,0]]]" GT
     step "[4,[5,6,7]]" "[4,[5,6,0]]" GT
     step "[5,6,7]" "[5,6,0]" GT
+    step "[4]" "[[4]]" EQ
+    step "[[4]]" "[[[4]]]" EQ
+    step "[4]" "[[[4]]]" EQ
 
     parsing "[]" (Package [])
     parsing "[[]]" (Package [Nested []])
