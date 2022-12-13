@@ -6,6 +6,8 @@ import Utils(intoPairs, zipWithIndexStarting)
 import qualified Data.Ord as Ordering
 import Data.Ord(Ordering)
 import Data.Bifunctor(first, second)
+import Data.List(sort, find)
+import Data.Maybe(fromJust)
 
 run :: String -> IO ()
 run input =
@@ -19,18 +21,18 @@ run input =
 
 {- Parsing -}
 
-parse :: String -> [(Package, Package)]
-parse input = intoPairs $ parsePackage <$> (filter (not . null) $ lines input)
+parse :: String -> [Packet]
+parse input = parsePacket <$> (filter (not . null) $ lines input)
 
-parsePackage :: String -> Package
-parsePackage = Package . read
+parsePacket :: String -> Packet
+parsePacket = Packet . read
 
 instance (Read a) => Read (NestedValue a) where
   readsPrec prio s@('[':xs) = fmap (first Nested) $ readsPrec prio s
   readsPrec prio s          = fmap (first Value)  $ readsPrec prio s
 
-instance Show Package where
-  show (Package xs) = show xs
+instance Show Packet where
+  show (Packet xs) = show xs
 
 instance (Show a) => Show (NestedValue a) where
   show (Value  x)  = show x
@@ -38,13 +40,13 @@ instance (Show a) => Show (NestedValue a) where
 
 {- Nested -}
 
-newtype Package = Package [NestedValue Int]
+newtype Packet = Packet [NestedValue Int]
   deriving Eq
 
 data NestedValue a = Value a | Nested [NestedValue a]
 
-instance Ord Package where
-  compare (Package nvx) (Package nvy) = compare (Nested nvx) (Nested nvy)
+instance Ord Packet where
+  compare (Packet nvx) (Packet nvy) = compare (Nested nvx) (Nested nvy)
 
 instance (Ord a) => Ord (NestedValue a) where
   compare (Value x)    (Value y)    = compare x y
@@ -66,17 +68,29 @@ instance (Ord a) => Eq (NestedValue a) where
 
 {- Task 1 -}
 
-inRightOrder :: (Package, Package) -> Bool
+inRightOrder :: (Packet, Packet) -> Bool
 inRightOrder (x, y) | x == y = error "No right order for equality"
 inRightOrder (x, y)          = x < y
 
-task1 :: [(Package, Package)] -> Int
-task1 = sum . map fst . filter (\(_, p) -> inRightOrder p) . zipWithIndexStarting 1
+task1 :: [Packet] -> Int
+task1 = sum . map fst . filter (\(_, p) -> inRightOrder p) . zipWithIndexStarting 1 . intoPairs
 
 {- Task 2 -}
 
--- task2 :: Mountain -> Int
-task2 _ = "not implemented"
+task2 :: [Packet] -> Int
+task2 packets =
+  let
+    div1 = parsePacket "[[2]]"
+    div2 = parsePacket "[[6]]"
+
+    addDividers xs = div1:div2:xs
+
+    sortedIndexed = zipWithIndexStarting 1 $ sort $ addDividers packets
+
+    findIndex p1 = fst $ fromJust $ find (\(_, p2) -> p1 == p2) sortedIndexed
+  in
+    (findIndex div1) * (findIndex div2)
+
 
 {- Unit Test -}
 
@@ -114,23 +128,24 @@ example = unlines [
   ]
 
 parsedExample = parse example
+parsedExample1 = intoPairs parsedExample
 
 validateExample :: IO ()
 validateExample =
   do
     test "task1 example" 13 (task1 parsedExample)
-    -- test "task2 example" 29 (task2 exampleMountain)
+    test "task2 example" 140 (task2 parsedExample)
 
 debug1 :: IO ()
 debug1 =
   do
-    test "inRightOrder example" [True, True, False, True, False, True, False, False] (inRightOrder <$> parsedExample)
+    test "inRightOrder example" [True, True, False, True, False, True, False, False] (inRightOrder <$> parsedExample1)
     testPair 4 True
     testPair 5 False
     testPair 6 True
     testPair 7 False
   where
-    testPair idx expected = test ("inRightOrder (pair " ++ (show idx) ++ ")") expected (inRightOrder $ parsedExample !! (idx - 1))
+    testPair idx expected = test ("inRightOrder (pair " ++ (show idx) ++ ")") expected (inRightOrder $ parsedExample1 !! (idx - 1))
 
 debug2 :: IO ()
 debug2 =
@@ -154,14 +169,14 @@ debug2 =
     step "[[4]]" "[[[4]]]" EQ
     step "[4]" "[[[4]]]" EQ
 
-    parsing "[]" (Package [])
-    parsing "[[]]" (Package [Nested []])
-    parsing "[[[]]]" (Package [Nested [Nested []]])
+    parsing "[]" (Packet [])
+    parsing "[[]]" (Packet [Nested []])
+    parsing "[[[]]]" (Packet [Nested [Nested []]])
 
     parseAndReturn "[]"
     parseAndReturn "[[]]"
     parseAndReturn "[[[]]]"
   where
     step sl sr expected = test ("compare " ++ sl ++ " " ++ sr) expected (compare (read sl :: NestedValue Int) (read sr :: NestedValue Int))
-    parsing s expected = test ("parsing " ++ (show s)) expected (parsePackage s)
-    parseAndReturn s = test ("parseAndReturn " ++ (show s)) s (show $ parsePackage s)
+    parsing s expected = test ("parsing " ++ (show s)) expected (parsePacket s)
+    parseAndReturn s = test ("parseAndReturn " ++ (show s)) s (show $ parsePacket s)
