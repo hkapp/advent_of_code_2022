@@ -4,6 +4,8 @@ import Prelude hiding (round)
 
 import Utils(arrayFromIndexedList, splitSep, stripPrefix, stripSuffix, top)
 import Test(test)
+import Queue(Queue)
+import qualified Queue
 
 import Control.Monad(replicateM, replicateM_)
 import Control.Monad.State(State, evalState, state, get, put)
@@ -15,8 +17,6 @@ import Data.List(transpose)
 import Data.Word(Word64)
 import Data.Foldable(traverse_)
 import System.Random(randomRIO)
-import Data.Sequence (Seq(..))
-import qualified Data.Sequence as Seq
 
 run :: String -> IO ()
 run input =
@@ -30,20 +30,18 @@ run input =
 
 {- Queue -}
 
-type Queue a = Seq a
-
 pushQ :: a -> Queue a -> Queue a
-pushQ = flip (Seq.|>)
+pushQ = Queue.push
 
 popQ :: Queue a -> (a, Queue a)
-popQ (x:<|xs) = (x, xs)
+popQ = Queue.pop
 
 nullQ :: Queue a -> Bool
-nullQ = null
+nullQ = Queue.null
 
 {- Popping will get the elements in the same order as in the original list -}
 fromListQ :: [a] -> Queue a
-fromListQ = Seq.fromList
+fromListQ = Queue.fromList
 
 {- Parsing -}
 

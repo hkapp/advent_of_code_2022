@@ -1,10 +1,14 @@
 module Utils where
 
 import Data.Array.IArray(Array, array)
+import qualified Data.Array.IArray as Array
+import qualified Data.Char
 import Data.List(unfoldr, sort, sortOn)
 import Data.Ord(Down(..))
+import qualified Data.Ix
+import Data.Maybe(maybeToList)
 
-import Control.Monad.State(State, evalState)
+import Control.Monad.State(State, evalState, get)
 import Control.Monad(join)
 
 splitFirstSep :: (Eq a) => a -> [a] -> ([a], [a])
@@ -89,3 +93,39 @@ top n = take n . sortOn Down
 
 bot :: (Ord a) => Int -> [a] -> [a]
 bot n = take n . sort
+
+ascii :: Char -> Int
+ascii = Data.Char.ord
+
+arrayFromNestedList :: [[a]] -> Array (Int, Int) a
+arrayFromNestedList xs =
+  let
+    lowestIdx = (0, 0)
+
+    highestListIdx ys = (length ys) - 1
+
+    highestRowIdx = highestListIdx xs
+    highestColIdx = maximum $ highestListIdx <$> xs
+    highestIdx = (highestRowIdx, highestColIdx)
+
+    withIndex = map (\(r, c, x) -> ((r, c), x)) $ zipSquareWithIndex xs
+  in
+    array (lowestIdx, highestIdx) withIndex
+
+withinBounds :: (Data.Ix.Ix i) => Array i e -> i -> Bool
+withinBounds arr = Data.Ix.inRange (Array.bounds arr)
+
+findIndexesWhere :: (Data.Ix.Ix i) => (e -> Bool) -> Array i e -> [i]
+findIndexesWhere pred = map fst . filter (pred . snd) . Array.assocs
+
+flattenMaybe :: [Maybe a] -> [a]
+flattenMaybe xs = xs >>= maybeToList
+
+repeatUntil :: ((a, s) -> Bool) -> State s a -> State s a
+repeatUntil cond st =
+  do
+    x <- st
+    s <- get
+    if cond (x, s)
+      then return x
+      else repeatUntil cond st

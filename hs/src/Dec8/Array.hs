@@ -1,7 +1,7 @@
 module Dec8.Array (run) where
 
 import Test(test)
-import Utils(zipSquareWithIndex)
+import Utils(zipSquareWithIndex, arrayFromNestedList)
 
 import Data.List(transpose, unfoldr)
 import Data.Bifunctor(second)
@@ -37,21 +37,6 @@ parseRow = map (read . return)
 
 intoForest :: [[Int]] -> Forest
 intoForest = arrayFromNestedList
-
-arrayFromNestedList :: [[a]] -> Array (Int, Int) a
-arrayFromNestedList xs =
-  let
-    lowestIdx = (0, 0)
-
-    highestListIdx ys = (length ys) - 1
-
-    highestRowIdx = highestListIdx xs
-    highestColIdx = maximum $ highestListIdx <$> xs
-    highestIdx = (highestRowIdx, highestColIdx)
-
-    withIndex = map (\(r, c, x) -> ((r, c), x)) $ zipSquareWithIndex xs
-  in
-    array (lowestIdx, highestIdx) withIndex
 
 {- Forest -}
 
