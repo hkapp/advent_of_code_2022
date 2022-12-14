@@ -37,15 +37,6 @@ data Cave = Cave {
 topEdge :: Cave -> Int
 topEdge = const 0
 
-{-         (  x,   y) -}
-type Pos = (Int, Int)
-
-xPos :: Pos -> Int
-xPos = fst
-
-yPos :: Pos -> Int
-yPos = snd
-
 data Mat = Rock | Air
 
 parse :: String -> Cave
@@ -82,6 +73,43 @@ intoCave rockPositions =
   in
     Cave rockMap leftEdge rightEdge bottomEdge
 
+{- Coordinate system -}
+
+{-                 y0=0
+  x0=500  <--x-- (x0, y0) --x-->
+                    |
+                    y
+                    |
+                    V
+-}
+
+{-         (  x,   y) -}
+type Pos = (Int, Int)
+
+xPos :: Pos -> Int
+xPos = fst
+
+yPos :: Pos -> Int
+yPos = snd
+
+below :: Pos -> Pos
+below (x, y) = (x, y+1)
+
+leftOf :: Pos -> Pos
+leftOf (x, y) = (x-1, y)
+
+rightOf :: Pos -> Pos
+rightOf (x, y) = (x+1, y)
+
+-- bottom-left diagonal
+diagLeft :: Pos -> Pos
+diagLeft = leftOf . below
+
+-- bottom-right diagonal
+diagRight :: Pos -> Pos
+diagRight = rightOf . below
+
+
 {- Cave -}
 
 topLeft :: Cave -> Pos
@@ -105,6 +133,49 @@ matAt cave pos = Map.findWithDefault Air pos (caveState cave)
 matChar :: Mat -> Char
 matChar Rock = '#'
 matChar Air  = '.'
+
+{- Sand -}
+
+data Outcome = Stable | Leaks
+type PartialOutcome = Maybe Outcome
+
+{- A grain of sand -}
+type Grain = Pos
+
+leaks :: Cave -> Grain -> Bool
+leaks cave grain =
+  let
+    leaksLeft = (xPos grain) < (leftEdge cave)
+    leaksRight = (xPos grain) > (rightEdge cave)
+    leaksBottom = (yPos grain) > (bottomEdge cave)
+  in
+    leaksLeft || leaksRight || leaksBottom
+
+fall :: Cave -> Grain -> Maybe Grain
+fall cave grain =
+  join $ find isJust $ map (\mv -> tryPos $ mv cave grain) candidateDirections
+  where
+    tryPos pos = toMaybe (free pos) pos
+    candidateDirections =  [below, diagLeft, diagRight]
+    {- the order in this list is important! -}
+
+grainPhysics :: Cave -> State Grain PartialOutcome
+grainPhysics cave =
+  do
+    grain <- get
+    if leaks cave grain
+      then return $ Just Leaks
+      else
+        case fall cave grain of
+          Just newPos ->
+            do
+              put newPos
+              return Nothing
+          Nothing     ->
+            return $ Just Stable
+
+newGrain :: State Cave Outcome
+newGrain = repeatUntil (second . isJust) grainPhysics
 
 {- Task 1 -}
 
