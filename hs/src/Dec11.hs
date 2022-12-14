@@ -2,7 +2,7 @@ module Dec11 (run) where
 
 import Prelude hiding (round)
 
-import Utils(arrayFromIndexedList, splitSep, stripPrefix, stripSuffix, top)
+import Utils(arrayFromIndexedList, splitSep, splitSubSeq, stripPrefix, stripSuffix, top)
 import Test(test)
 import Queue(Queue)
 import qualified Queue
@@ -164,9 +164,7 @@ intoTroop :: [(MIdx, Monkey)] -> Troop
 intoTroop = map snd
 
 parseItems :: String -> [Item]
-parseItems itemLine = map read $ splitTwoChar ", " $ stripPrefix "  Starting items: " itemLine
-  where splitTwoChar (c1:c2:[]) = splitSep c1 . filter ((/=) c2)
-  {- this doesn't work in general, but will work in this instance -}
+parseItems itemLine = map read $ splitSubSeq ", " $ stripPrefix "  Starting items: " itemLine
 
 intoHold :: [(MIdx, [Item])] -> Hold
 intoHold = Map.fromList . map (second fromListQ)

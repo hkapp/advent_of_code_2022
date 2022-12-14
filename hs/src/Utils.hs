@@ -26,6 +26,16 @@ splitSep sep = unfoldr f
   where f [] = Nothing
         f xs = Just $ splitFirstSep sep xs
 
+splitSubSeq :: (Eq a) => [a] -> [a] -> [[a]]
+splitSubSeq sep xs = reverse $ rec [] [] xs
+  where
+    rec res []   [] = res
+    rec res curr [] = (reverse curr):res
+    rec res curr ys =
+      if (take (length sep) ys) == sep
+       then rec ((reverse curr):res) [] (drop (length sep) ys)
+       else rec res ((head ys):curr) (tail ys)
+
 (<$$>) :: (a -> b) -> [[a]] -> [[b]]
 (<$$>) f = map (map f)
 
