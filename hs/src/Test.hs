@@ -9,3 +9,15 @@ test message expected found =
         putStrLn $ "[FAIL] " ++ message
         putStrLn $ "Expected: " ++ (show expected)
         putStrLn $ "Found:    " ++ (show found)
+
+testFmtStr :: String -> String -> String -> IO ()
+testFmtStr message expected found =
+  if expected == found
+    then return ()
+    else
+      do
+        putStrLn $ "[FAIL] " ++ message
+        putStrLn $ "Expected: "
+        putStrLn $ expected
+        putStrLn $ "Found:    "
+        putStrLn $ found

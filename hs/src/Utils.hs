@@ -7,6 +7,7 @@ import Data.List(unfoldr, sort, sortOn)
 import Data.Ord(Down(..))
 import qualified Data.Ix
 import Data.Maybe(maybeToList)
+import Data.Bifunctor(Bifunctor, bimap)
 
 import Control.Monad.State(State, evalState, get)
 import Control.Monad(join)
@@ -143,3 +144,6 @@ repeatUntil cond st =
 intoPairs :: [a] -> [(a, a)]
 intoPairs (x:y:zs) = (x, y):(intoPairs zs)
 intoPairs []       = []
+
+both :: (Bifunctor f) => (a -> b) -> f a a -> f b b
+both f = bimap f f
