@@ -9,6 +9,7 @@ import qualified Dec10
 import qualified Dec11
 import qualified Dec12
 import qualified Dec13
+import qualified Dec14
 
 main :: IO ()
 main =
@@ -31,6 +32,7 @@ main =
       "day11" -> Dec11.run input
       "day12" -> Dec12.run input
       "day13" -> Dec13.run input
+      "day14" -> Dec14.run input
       other   -> error $ "Not implemented: " ++ other
 
 inputFile :: String -> IO String
