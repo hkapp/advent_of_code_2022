@@ -178,26 +178,6 @@ findHoles bounds segs = snd $ foldl' f ((segLeft bounds) - 1, []) (segs ++ [(rig
     f (currX, currHoles) currSeg = (segRight currSeg, (Ix.range (currX + 1, (segLeft currSeg) - 1)) ++ currHoles)
     rightBound = segRight bounds + 1
 
-{- Sensor logic -}
--- TODO cleanup what's not necessary
-
-{- Absolute Manhattan distance -}
-mdist :: Pos -> Pos -> Int
-mdist (x, y) (x', y') = (abs (x - x')) + (abs (y - y'))
-
-inSensorRange :: Sensor -> Pos -> Bool
-inSensorRange sensor pos = (mdist (sensorPos sensor) pos) <= (sensorRangeRadius sensor)
-
-couldHaveABeacon :: Field -> Pos -> Bool
-couldHaveABeacon field = not . beaconWouldBeInRange field
-
-beaconWouldBeInRange :: Field -> Pos -> Bool
-beaconWouldBeInRange field pos = any (\sensor -> inSensorRange sensor pos) field
-
-alreadyBeaconAt :: Set Beacon -> Pos -> Bool
--- alreadyBeaconAt xfield = (flip Set.member) (beaconSet xfield)
-alreadyBeaconAt = flip Set.member
-
 {-            #
               | (u)
 y -->   #-(u)-#-(u)-#
@@ -239,45 +219,6 @@ restrictedInfluenceOnLine bounds y field =
 
 {- Task 1 -}
 
-data ExtField = ExtField {
-  fieldExt  :: Field,
-  beaconSet :: Set Beacon
-  }
-
-{- Gives ALL edges of sensor radii -}
-xFieldEdges :: Field -> [Int]
-xFieldEdges = (=<<) sensorEdges
-  where
-    sensorEdges sensor =
-      let
-        x = xPos $ sensorPos sensor
-        radius = sensorRangeRadius sensor
-      in
-        [x - radius, x + radius]
-
-{- We need to figure out the min and max values of x for the field -}
-buildRow :: Int -> Field -> [Pos]
-buildRow y field =
-  let
-    xMin = minimum $ xFieldEdges field
-    xMax = maximum $ xFieldEdges field
-  in
-    Ix.range ((xMin, y), (xMax, y))
-
-findImpossibleBeacons :: Field -> [Pos] -> [Pos]
-findImpossibleBeacons field candidates =
-  let
-    beacons = buildBeaconSet field
-  in
-    filter (beaconWouldBeInRange field) $ filter (not . alreadyBeaconAt beacons) $ candidates
-
-
-impossibleBeaconsOnRow :: Int -> Field -> [Pos]
-impossibleBeaconsOnRow y field = findImpossibleBeacons field $ buildRow y field
-
-buildBeaconSet :: Field -> Set Beacon
-buildBeaconSet field = Set.fromList $ map closestBeacon field
-
 task1 :: Field -> Int
 task1 = task1Param 2000000
 
@@ -295,7 +236,6 @@ countCantHaveBeaconOnLine y field =
 
 task1Param :: Int -> Field -> Int
 task1Param y field = countCantHaveBeaconOnLine y field
--- task1Param y field = length $ impossibleBeaconsOnRow y field
 
 {- Task 2 -}
 
@@ -327,7 +267,6 @@ task2Param lowerBound upperBound field =
     distressSignal = fromSingleton $ possibleDistressSignals lowerBound upperBound field
   in
     (toInteger $ xPos distressSignal) * 4000000 + (toInteger $ yPos distressSignal)
-  -- fromSingleton $ map (\(x, y) -> x * 4000000 + y) $ findImpossibleBeacons field (Ix.range ((lowerBound, lowerBound), (upperBound, upperBound)))
 
 {- Unit Test -}
 
@@ -335,7 +274,6 @@ unitTest :: IO ()
 unitTest =
   do
     debug1
-    debug2
     testSegments
     showExample2
     debug3
@@ -380,13 +318,23 @@ debug1 =
     ier expected pos = test ("in example range " ++ (show pos)) expected (inSensorRange exampleSensor pos)
     mdi expected pos1 pos2 = test ("mdist " ++ (show pos1) ++ " " ++ (show pos2)) expected (mdist pos1 pos2)
 
-debug2 :: IO ()
-debug2 =
-  do
-    test "impossible example row" ((Ix.range ((-2, 10), (1, 10))) ++ Ix.range ((3, 10), (24, 10))) (impossibleBeaconsOnRow 10 exampleParsed)
-
 showExample2 :: IO ()
 showExample2 = putStrLn (showField ((-2, -2), (25, 22)) exampleParsed)
+
+{- Sensor logic -}
+
+{- Absolute Manhattan distance -}
+mdist :: Pos -> Pos -> Int
+mdist (x, y) (x', y') = (abs (x - x')) + (abs (y - y'))
+
+inSensorRange :: Sensor -> Pos -> Bool
+inSensorRange sensor pos = (mdist (sensorPos sensor) pos) <= (sensorRangeRadius sensor)
+
+beaconWouldBeInRange :: Field -> Pos -> Bool
+beaconWouldBeInRange field pos = any (\sensor -> inSensorRange sensor pos) field
+
+alreadyBeaconAt :: Set Beacon -> Pos -> Bool
+alreadyBeaconAt = flip Set.member
 
 showField :: (Pos, Pos) -> Field -> String
 showField (tl, br) field = unlines $ posChar <$$> dispRange
