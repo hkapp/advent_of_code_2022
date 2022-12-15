@@ -8,7 +8,7 @@ import qualified Data.Ix as Ix
 import Data.Set(Set)
 import qualified Data.Set as Set
 import Data.Maybe(isJust)
-import Data.List(find, transpose, sortOn)
+import Data.List(find, transpose, sortOn, foldl')
 
 run :: String -> IO ()
 run input =
@@ -20,7 +20,9 @@ run input =
     test "task1 (real input)" 5461729 res1
     print $ res1
     putStrLn "Task 2:"
-    print $ task2 parsed
+    let res2 = task2 parsed
+    print res2
+    test "task2 (real input)" 10621647166538 res2
 
 {- Parsing -}
 
@@ -169,6 +171,13 @@ segRestrict bounds seg =
 segLength :: Segment -> Int
 segLength seg = (segRight seg) - (segLeft seg) + 1
 
+{- we assume that the segments have already been restricted to the given bounds, and that they're sorted -}
+findHoles :: Segment -> [Segment] -> [Int]
+findHoles bounds segs = snd $ foldl' f ((segLeft bounds) - 1, []) (segs ++ [(rightBound, rightBound)])
+  where
+    f (currX, currHoles) currSeg = (segRight currSeg, (Ix.range (currX + 1, (segLeft currSeg) - 1)) ++ currHoles)
+    rightBound = segRight bounds + 1
+
 {- Sensor logic -}
 -- TODO cleanup what's not necessary
 
@@ -224,8 +233,9 @@ fieldInfluenceOnLine :: Int -> Field -> [Segment]
 fieldInfluenceOnLine y field =
   mergeSegments $ flattenMaybe $ map (sensorSegmentOnLine y) field
 
--- fakeBeaconsAsSensors :: Field -> [Sensor]
--- fakeBeaconsAsSensors field = map (\b -> buildSensor b b) $ map closestBeacon field
+restrictedInfluenceOnLine :: Segment -> Int -> Field -> [Segment]
+restrictedInfluenceOnLine bounds y field =
+  flattenMaybe $ map (segRestrict bounds) $ fieldInfluenceOnLine y field
 
 {- Task 1 -}
 
@@ -276,10 +286,10 @@ countCantHaveBeaconOnLine :: Int -> Field -> Int
 countCantHaveBeaconOnLine y field =
   let
     sensorPrevents = sum $ map segLength $ fieldInfluenceOnLine y field
-    nbeacons = length $ filter (\b -> (yPos b) == y) $ distinct $ map closestBeacon field
     {- Any beacon that appears on the line MUST be in the influence of sensors
        So doing a simple substraction of the counts is ok
      -}
+    nbeacons = length $ filter (\b -> (yPos b) == y) $ distinct $ map closestBeacon field
   in
     sensorPrevents - nbeacons
 
@@ -289,12 +299,35 @@ task1Param y field = countCantHaveBeaconOnLine y field
 
 {- Task 2 -}
 
--- task2 :: Cave -> Int
+task2 :: Field -> Integer
 task2 = task2Param 0 4000000
 
-task2Param :: Int -> Int -> Field -> Int {- Integer -}
+possibleDistressSignals :: Int -> Int -> Field -> [Pos]
+possibleDistressSignals lowerBound upperBound field =
+  let
+    yRange = Ix.range (lowerBound, upperBound)
+    xBounds = (lowerBound, upperBound)
+    rowSegments y = restrictedInfluenceOnLine xBounds y field
+    allRowSegments = map rowSegments yRange
+    allRowHoles = map (findHoles xBounds) allRowSegments
+
+    identifyDistress :: (Int, [Int]) -> [Pos]
+    identifyDistress (y, (x1:x2:xs)) =
+      error $ "More than one hole can't happen: y=" ++ (show y) ++ ", x1=" ++ (show x1) ++ ", x2=" ++ (show x2)
+    identifyDistress (y, (x:[]))     = [(x, y)]
+    identifyDistress (y, [])         = []
+
+    rowHolesWithRowIdx = zip yRange allRowHoles
+  in
+    identifyDistress =<< rowHolesWithRowIdx
+
+task2Param :: Int -> Int -> Field -> Integer
 task2Param lowerBound upperBound field =
-  fromSingleton $ map (\(x, y) -> x * 4000000 + y) $ findImpossibleBeacons field (Ix.range ((lowerBound, lowerBound), (upperBound, upperBound)))
+  let
+    distressSignal = fromSingleton $ possibleDistressSignals lowerBound upperBound field
+  in
+    (toInteger $ xPos distressSignal) * 4000000 + (toInteger $ yPos distressSignal)
+  -- fromSingleton $ map (\(x, y) -> x * 4000000 + y) $ findImpossibleBeacons field (Ix.range ((lowerBound, lowerBound), (upperBound, upperBound)))
 
 {- Unit Test -}
 
@@ -305,6 +338,7 @@ unitTest =
     debug2
     testSegments
     showExample2
+    debug3
     validateExample
 
 example = unlines [
@@ -333,7 +367,7 @@ validateExample =
   do
     test "task1 example" [(-2, 24)] (fieldInfluenceOnLine 10 exampleParsed)
     test "task1 example" 26 (task1Param 10 exampleParsed)
-    -- test "task2 example" 56000011 (task2Param 0 20 exampleParsed)
+    test "task2 example" 56000011 (task2Param 0 20 exampleParsed)
 
 debug1 :: IO ()
 debug1 =
@@ -406,3 +440,14 @@ testSegments =
     mrg expected xs = test ("mergeSegments " ++ (show xs)) expected (mergeSegments xs)
     ssl expected y = test ("sensorSegmentOnLine " ++ (show y)) expected (sensorSegmentOnLine y exampleSensor)
     sr expected s1 s2 = test ("segRestrict " ++ (show s2) ++ " " ++ (show s1)) expected (segRestrict s2 s1)
+
+debug3 :: IO ()
+debug3 =
+  do
+    let lowerBound = 0
+    let upperBound = 20
+    let xBounds = (lowerBound, upperBound)
+    let withinBounds (l, r) = (l >= lowerBound) && (r <= upperBound)
+    test "restrictedInfluenceOnLine always within bounds" True (all withinBounds $ restrictedInfluenceOnLine xBounds 14 exampleParsed)
+    test "findHoles example row 11" [14] (findHoles xBounds [(0, 13), (15, 20)])
+    test "possibleDistressSignals example" [(14, 11)] (possibleDistressSignals lowerBound upperBound exampleParsed)
