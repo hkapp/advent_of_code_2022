@@ -66,6 +66,9 @@ chunksOf n = unfoldr f
 flatten :: (Monad m) => m (m a) -> m a
 flatten = join
 
+mflatten :: (Monad m) => m (m a) -> m a
+mflatten = join
+
 arrayFromIndexedList :: [(Int, a)] -> Array Int a
 arrayFromIndexedList xs =
   let
@@ -147,3 +150,18 @@ intoPairs []       = []
 
 both :: (Bifunctor f) => (a -> b) -> f a a -> f b b
 both f = bimap f f
+
+toMaybe :: Bool -> a -> Maybe a
+toMaybe True  x = Just x
+toMaybe False _ = Nothing
+
+countUntil :: ((a, s) -> Bool) -> State s a -> State s Int
+countUntil pred st = countStarting 0
+  where
+    countStarting n =
+      do
+        a <- st
+        s <- get
+        if pred (a, s)
+          then return n
+          else countStarting (n+1)

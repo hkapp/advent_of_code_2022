@@ -1,11 +1,14 @@
 module Dec14 (run) where
 
 import Test(test, testFmtStr)
-import Utils(splitFirstSep, splitSubSeq, both, (<$$>))
+import Utils(splitFirstSep, splitSubSeq, both, (<$$>), toMaybe, mflatten, repeatUntil, countUntil)
 
 import Data.Map(Map)
 import qualified Data.Map as Map
 import qualified Data.Ix as Ix
+import Control.Monad.State(State, put, get, runState, evalState)
+import Data.List(find)
+import Data.Maybe(isJust, fromJust)
 
 run :: String -> IO ()
 run input =
@@ -13,8 +16,8 @@ run input =
     unitTest
     let parsed = parse input
     putStrLn "Task 1:"
-    -- print $ task1 parsed
-    putStrLn $ task1 parsed
+    print $ task1 parsed
+    -- putStrLn $ task1 parsed
     putStrLn "Task 2:"
     print $ task2 parsed
 
@@ -37,7 +40,7 @@ data Cave = Cave {
 topEdge :: Cave -> Int
 topEdge = const 0
 
-data Mat = Rock | Air
+data Mat = Rock | Air | Sand
 
 parse :: String -> Cave
 parse input = intoCave $ (lines input) >>= (explicitRockLine . parseRockLine)
@@ -133,10 +136,12 @@ matAt cave pos = Map.findWithDefault Air pos (caveState cave)
 matChar :: Mat -> Char
 matChar Rock = '#'
 matChar Air  = '.'
+matChar Sand = 'o'
 
 {- Sand -}
 
 data Outcome = Stable | Leaks
+  deriving Eq
 type PartialOutcome = Maybe Outcome
 
 {- A grain of sand -}
@@ -151,12 +156,15 @@ leaks cave grain =
   in
     leaksLeft || leaksRight || leaksBottom
 
+free :: Cave -> Grain -> Bool
+free cave = (flip Map.notMember) (caveState cave)
+
 fall :: Cave -> Grain -> Maybe Grain
 fall cave grain =
-  join $ find isJust $ map (\mv -> tryPos $ mv cave grain) candidateDirections
+  mflatten $ find isJust $ map (\mv -> tryPos $ mv grain) candidateDirections
   where
-    tryPos pos = toMaybe (free pos) pos
-    candidateDirections =  [below, diagLeft, diagRight]
+    tryPos pos = toMaybe (free cave pos) pos
+    candidateDirections = [below, diagLeft, diagRight]
     {- the order in this list is important! -}
 
 grainPhysics :: Cave -> State Grain PartialOutcome
@@ -174,18 +182,67 @@ grainPhysics cave =
           Nothing     ->
             return $ Just Stable
 
-newGrain :: State Cave Outcome
-newGrain = repeatUntil (second . isJust) grainPhysics
+dropGrain :: State Cave Outcome
+dropGrain =
+  do
+    oldCave <- get
+    let (res, grain) = (flip runState) sandSource $ repeatUntil (isJust . fst) (grainPhysics oldCave)
+    case fromJust res of
+      Stable ->
+        do
+          put $ insertSand oldCave grain
+          return Stable
+      Leaks  ->
+        return Leaks
+
+sandSource :: Pos
+sandSource = (500, 0)
+
+insertSand :: Cave -> Grain -> Cave
+insertSand cave grain = withCaveState (Map.insert grain Sand) cave
+
+withCaveState :: (Map Pos Mat -> Map Pos Mat) -> Cave -> Cave
+withCaveState f (Cave s l r b) = Cave (f s) l r b
 
 {- Task 1 -}
 
--- task1 :: Troop -> Hold -> Int
-task1 = showCave
+countUntilLeak :: Cave -> Int
+countUntilLeak = evalState $ countUntil (\(o, _) -> o == Leaks) dropGrain
+
+task1 :: Cave -> Int
+task1 = countUntilLeak
 
 {- Task 2 -}
 
--- task2 :: Troop -> Hold -> Int
-task2 _ = "not implemented"
+addFloor :: Cave -> Cave
+addFloor cave =
+  let
+    {- We use here the fact that the sand will always make a 45 degree angle with the
+       source to safely avoid faking an infinite floor
+    -}
+    yFloor = (bottomEdge cave) + 2
+    xSource = xPos sandSource
+    {- The base of the sand pyramid will have half width of at most (yFloor - ySource)
+       So we add this value on the left and on the right of the source's x value
+    -}
+    halfWidth = yFloor - (yPos sandSource)
+    floorLeft = xSource - halfWidth
+    floorRight = xSource + halfWidth
+    {- Now add these as rocks in the cave state -}
+    floorPoss = explicitRockLine [(floorLeft, yFloor), (floorRight, yFloor)]
+    oldRockPoss = Map.keys (caveState cave)
+  in
+    intoCave (floorPoss ++ oldRockPoss)
+
+countUntilBlocksSource :: Cave -> Int
+countUntilBlocksSource cave = 1 + oneOff
+  where
+    oneOff = evalState (countUntil blocksSource dropGrain) cave
+    blocksSource (Leaks, _) = error "The system leaks!"
+    blocksSource (    _, c) = Map.member sandSource (caveState c)
+
+task2 :: Cave -> Int
+task2 baseCave = countUntilBlocksSource (addFloor baseCave)
 
 {- Unit Test -}
 
@@ -219,6 +276,8 @@ validateExample :: IO ()
 validateExample =
   do
     testFmtStr "display example" exampleDisp (showCave exampleCave)
+    test "task1 example" 24 (task1 exampleCave)
+    test "task2 example" 93 (task2 exampleCave)
 
 debug1 :: IO ()
 debug1 =
