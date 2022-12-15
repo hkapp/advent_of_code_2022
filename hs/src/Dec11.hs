@@ -2,7 +2,7 @@ module Dec11 (run) where
 
 import Prelude hiding (round)
 
-import Utils(arrayFromIndexedList, splitSep, splitSubSeq, stripPrefix, stripSuffix, top)
+import Utils(arrayFromIndexedList, splitSep, splitSubSeq, stripPrefix, stripSuffix, top, parserStrip)
 import Test(test)
 import Queue(Queue)
 import qualified Queue
@@ -98,9 +98,6 @@ parseOp = evalState $
     parserStrip " "
     rightOperand <- parseOperand
     return $ makeOp leftOperand arithmetic rightOperand
-
-parserStrip :: String -> State String ()
-parserStrip prefix = state (\s -> ((), stripPrefix prefix s))
 
 type Operand = (Worry -> Worry)
 

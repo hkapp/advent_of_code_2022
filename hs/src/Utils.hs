@@ -9,7 +9,7 @@ import qualified Data.Ix
 import Data.Maybe(maybeToList)
 import Data.Bifunctor(Bifunctor, bimap)
 
-import Control.Monad.State(State, evalState, get)
+import Control.Monad.State(State, evalState, get, state)
 import Control.Monad(join)
 
 splitFirstSep :: (Eq a) => a -> [a] -> ([a], [a])
@@ -101,6 +101,9 @@ stripSuffix toStrip = stripBy splitStr toStrip
             (remaining, suffix) = splitAt splitLen s
           in
             (suffix, remaining)
+
+parserStrip :: String -> State String ()
+parserStrip prefix = state (\s -> ((), stripPrefix prefix s))
 
 top :: (Ord a) => Int -> [a] -> [a]
 top n = take n . sortOn Down
