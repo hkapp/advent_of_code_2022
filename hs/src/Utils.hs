@@ -168,3 +168,7 @@ countUntil pred st = countStarting 0
         if pred (a, s)
           then return n
           else countStarting (n+1)
+
+fromSingleton :: [a] -> a
+fromSingleton (x:[]) = x
+fromSingleton xs     = error "Not a singleton list"

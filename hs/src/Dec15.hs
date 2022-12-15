@@ -1,12 +1,14 @@
 module Dec15 (run) where
 
 import Test(test)
-import Utils(parserStrip, splitFirstSep)
+import Utils(parserStrip, splitFirstSep, fromSingleton, (<$$>))
 
 import Control.Monad.State(State, evalState, put, get, gets)
 import qualified Data.Ix as Ix
 import Data.Set(Set)
 import qualified Data.Set as Set
+import Data.Maybe(isJust)
+import Data.List(find, transpose)
 
 run :: String -> IO ()
 run input =
@@ -14,7 +16,9 @@ run input =
     unitTest
     let parsed = parse input
     putStrLn "Task 1:"
-    print $ task1 parsed
+    let res1 = task1 parsed
+    test "task1 (real input)" 5461729 res1
+    print $ res1
     putStrLn "Task 2:"
     print $ task2 parsed
 
@@ -142,7 +146,7 @@ task2 = task2Param 0 4000000
 
 task2Param :: Int -> Int -> Field -> Int {- Integer -}
 task2Param lowerBound upperBound field =
-  head $ map (\(x, y) -> x * 4000000 + y) $ findImpossibleBeacons field (Ix.range ((lowerBound, lowerBound), (upperBound, upperBound)))
+  fromSingleton $ map (\(x, y) -> x * 4000000 + y) $ findImpossibleBeacons field (Ix.range ((lowerBound, lowerBound), (upperBound, upperBound)))
 
 {- Unit Test -}
 
@@ -151,6 +155,7 @@ unitTest =
   do
     debug1
     debug2
+    showExample2
     validateExample
 
 example = unlines [
@@ -178,7 +183,7 @@ validateExample :: IO ()
 validateExample =
   do
     test "task1 example" 26 (task1Param 10 exampleParsed)
-    -- test "task2 example" 93 (task2 exampleCave)
+    test "task2 example" 56000011 (task2Param 0 20 exampleParsed)
 
 debug1 :: IO ()
 debug1 =
@@ -195,3 +200,21 @@ debug2 :: IO ()
 debug2 =
   do
     test "impossible example row" ((Ix.range ((-2, 10), (1, 10))) ++ Ix.range ((3, 10), (24, 10))) (impossibleBeaconsOnRow 10 exampleParsed)
+
+showExample2 :: IO ()
+showExample2 = putStrLn (showField ((-2, -2), (25, 22)) exampleParsed)
+
+showField :: (Pos, Pos) -> Field -> String
+showField (tl, br) field = unlines $ posChar <$$> dispRange
+  where
+    posChar pos | beaconAt pos = 'B'
+    posChar pos | sensorAt pos = 'S'
+    posChar pos | beaconWouldBeInRange field pos = '#'
+    posChar pos                = '.'
+
+    beaconAt pos = alreadyBeaconAt (Set.fromList $ map closestBeacon field) pos
+
+    sensorAt pos = isJust $ find (\s -> (sensorPos s) == pos) field
+
+    dispRange :: [[Pos]]
+    dispRange = map (\y -> map (\x -> (x, y)) $ Ix.range (xPos tl, xPos br)) (Ix.range (yPos tl, yPos br))
