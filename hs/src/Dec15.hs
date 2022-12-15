@@ -1,14 +1,14 @@
 module Dec15 (run) where
 
 import Test(test)
-import Utils(parserStrip, splitFirstSep, fromSingleton, (<$$>))
+import Utils(parserStrip, splitFirstSep, fromSingleton, (<$$>), toMaybe, flattenMaybe, distinct)
 
 import Control.Monad.State(State, evalState, put, get, gets)
 import qualified Data.Ix as Ix
 import Data.Set(Set)
 import qualified Data.Set as Set
 import Data.Maybe(isJust)
-import Data.List(find, transpose)
+import Data.List(find, transpose, sortOn)
 
 run :: String -> IO ()
 run input =
@@ -73,7 +73,104 @@ xPos = fst
 yPos :: Pos -> Int
 yPos = snd
 
+{- Segment -}
+{- In this section a "line" always refers to a horizontal line,
+   i.e. fixed y, varying x
+   Segments are finite subsections of a line
+-}
+
+{- Start (left) and end (right)-}
+type Segment = (Int, Int)
+
+segLeft :: Segment -> Int
+segLeft = fst
+
+segRight :: Segment -> Int
+segRight = snd
+
+{- Only cases when two segments are NOT contiguous:
+   (we also allow overlapping as contiguous)
+  [. .]
+          [. .]
+
+          [. .]
+  [. .]
+-}
+notContiguous :: Segment -> Segment -> Bool
+notContiguous s1 s2 =
+  let
+    maxLeft  = max (segLeft s1)  (segLeft s2)
+    minRight = min (segRight s1) (segRight s2)
+  in
+    maxLeft > (1 + minRight)
+
+{- Contiguous or overlapping -}
+contiguous :: Segment -> Segment -> Bool
+contiguous s1 s2 = not $ notContiguous s1 s2
+
+{-  [. . .]
+  [. . .]
+  ->
+  [. . . .]
+-}
+{-  [. . .]
+      [. . .]
+  ->
+    [. . . .]
+-}
+{-  [. .]
+        [. .]
+  ->
+    [. . . .]
+-}
+segCombine :: Segment -> Segment -> Maybe Segment
+segCombine s1 s2 | contiguous s1 s2 = Just $ (min (segLeft s1) (segLeft s2), max (segRight s1) (segRight s2))
+segCombine _ _ = Nothing
+
+mergeSegments :: [Segment] -> [Segment]
+mergeSegments xs = recMerge $ sortOn segLeft xs
+  where
+    recMerge (x:y:zs) =
+      case segCombine x y of
+        Just w  -> recMerge (w:zs)
+        Nothing -> x:(recMerge (y:zs))
+
+    recMerge zs = zs
+
+{- Restricts the second segment to the range of the first one -}
+{-
+allowed:
+  [. . . . . .]
+
+  [. .]
+  ->
+  [. .]
+
+            [. .]
+ ->
+            [.]
+
+              [. .]
+ ->
+            []
+-}
+segRestrict :: Segment -> Segment -> Maybe Segment
+segRestrict bounds seg =
+  let
+    leftBound = segLeft bounds
+    rightBound = segRight bounds
+    l = max leftBound (segLeft seg)
+    r = min rightBound (segRight seg)
+    exceedsBounds = l > r
+    withinBounds = not exceedsBounds
+  in
+    toMaybe withinBounds (l, r)
+
+segLength :: Segment -> Int
+segLength seg = (segRight seg) - (segLeft seg) + 1
+
 {- Sensor logic -}
+-- TODO cleanup what's not necessary
 
 {- Absolute Manhattan distance -}
 mdist :: Pos -> Pos -> Int
@@ -91,6 +188,44 @@ beaconWouldBeInRange field pos = any (\sensor -> inSensorRange sensor pos) field
 alreadyBeaconAt :: Set Beacon -> Pos -> Bool
 -- alreadyBeaconAt xfield = (flip Set.member) (beaconSet xfield)
 alreadyBeaconAt = flip Set.member
+
+{-            #
+              | (u)
+y -->   #-(u)-#-(u)-#
+              | (v)
+              S
+              | (v)
+y -->   #-(u)-#-(u)-#
+              | (u)
+              #
+
+We have:
+  v + u = radius(S)
+  v = S.y - y
+      or y - S.y
+    = abs(S.y - y)
+
+If v > radius(S), then we don't get a segment
+Otherwise, u = radius(S) - v
+
+Note that when v == radius(S), u == 0
+  so the segment length is 1
+-}
+sensorSegmentOnLine :: Int -> Sensor -> Maybe Segment
+sensorSegmentOnLine y sensor =
+  let
+    v = abs ((yPos $ sensorPos sensor) - y)
+    u = (sensorRangeRadius sensor) - v
+    sx = xPos $ sensorPos sensor
+  in
+    toMaybe (u >= 0) (sx - u, sx + u)
+
+fieldInfluenceOnLine :: Int -> Field -> [Segment]
+fieldInfluenceOnLine y field =
+  mergeSegments $ flattenMaybe $ map (sensorSegmentOnLine y) field
+
+-- fakeBeaconsAsSensors :: Field -> [Sensor]
+-- fakeBeaconsAsSensors field = map (\b -> buildSensor b b) $ map closestBeacon field
 
 {- Task 1 -}
 
@@ -136,8 +271,21 @@ buildBeaconSet field = Set.fromList $ map closestBeacon field
 task1 :: Field -> Int
 task1 = task1Param 2000000
 
+{- We can't have a beacon where there is already one -}
+countCantHaveBeaconOnLine :: Int -> Field -> Int
+countCantHaveBeaconOnLine y field =
+  let
+    sensorPrevents = sum $ map segLength $ fieldInfluenceOnLine y field
+    nbeacons = length $ filter (\b -> (yPos b) == y) $ distinct $ map closestBeacon field
+    {- Any beacon that appears on the line MUST be in the influence of sensors
+       So doing a simple substraction of the counts is ok
+     -}
+  in
+    sensorPrevents - nbeacons
+
 task1Param :: Int -> Field -> Int
-task1Param y field = length $ impossibleBeaconsOnRow y field
+task1Param y field = countCantHaveBeaconOnLine y field
+-- task1Param y field = length $ impossibleBeaconsOnRow y field
 
 {- Task 2 -}
 
@@ -155,6 +303,7 @@ unitTest =
   do
     debug1
     debug2
+    testSegments
     showExample2
     validateExample
 
@@ -182,8 +331,9 @@ exampleSensor = buildSensor (8, 7) (2, 10)
 validateExample :: IO ()
 validateExample =
   do
+    test "task1 example" [(-2, 24)] (fieldInfluenceOnLine 10 exampleParsed)
     test "task1 example" 26 (task1Param 10 exampleParsed)
-    test "task2 example" 56000011 (task2Param 0 20 exampleParsed)
+    -- test "task2 example" 56000011 (task2Param 0 20 exampleParsed)
 
 debug1 :: IO ()
 debug1 =
@@ -218,3 +368,41 @@ showField (tl, br) field = unlines $ posChar <$$> dispRange
 
     dispRange :: [[Pos]]
     dispRange = map (\y -> map (\x -> (x, y)) $ Ix.range (xPos tl, xPos br)) (Ix.range (yPos tl, yPos br))
+
+testSegments =
+  do
+    ctg True (1, 2) (2, 3)
+    ctg True (1, 2) (3, 4)
+    ctg True (1, 2) (0, 4)
+    ctg False (1, 2) (4, 5)
+    ctg True (1, 1) (2, 3)
+
+    comb (Just (1, 3)) (1, 2) (2, 3)
+    comb (Just (1, 4)) (1, 2) (3, 4)
+    comb (Just (0, 4)) (1, 2) (0, 4)
+    comb Nothing (1, 2) (4, 5)
+    comb (Just (1, 3)) (1, 1) (2, 3)
+
+    mrg [(1, 3)] [(1, 2), (2, 3)]
+    mrg [(0, 4)] [(1, 2), (0, 4)]
+    mrg [(0, 5)] [(5, 5), (0, 4)]
+    mrg [(0, 4), (7, 8)] [(7, 8), (0, 4)]
+    mrg [(0, 4), (7, 8)] [(7, 8), (1, 2), (0, 4)]
+    mrg [(1, 5)] [(1, 2), (3, 3), (4, 5)]
+
+    ssl (Just (8, 8)) (-2)
+    ssl Nothing (-3)
+    ssl (Just (7, 9)) (-1)
+    ssl (Just (-1, 17)) 7
+
+    sr (Just (2, 2)) (1, 2) (2, 3)
+    sr Nothing (1, 2) (3, 4)
+    sr (Just (1, 2)) (1, 2) (0, 4)
+    sr Nothing (1, 2) (4, 5)
+    sr Nothing (1, 1) (2, 3)
+  where
+    ctg expected s1 s2 = test ("contiguous " ++ (show s1) ++ " " ++ (show s2)) expected (contiguous s1 s2)
+    comb expected s1 s2 = test ("segCombine " ++ (show s1) ++ " " ++ (show s2)) expected (segCombine s1 s2)
+    mrg expected xs = test ("mergeSegments " ++ (show xs)) expected (mergeSegments xs)
+    ssl expected y = test ("sensorSegmentOnLine " ++ (show y)) expected (sensorSegmentOnLine y exampleSensor)
+    sr expected s1 s2 = test ("segRestrict " ++ (show s2) ++ " " ++ (show s1)) expected (segRestrict s2 s1)

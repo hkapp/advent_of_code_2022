@@ -8,6 +8,7 @@ import Data.Ord(Down(..))
 import qualified Data.Ix
 import Data.Maybe(maybeToList)
 import Data.Bifunctor(Bifunctor, bimap)
+import qualified Data.Set as Set
 
 import Control.Monad.State(State, evalState, get, state)
 import Control.Monad(join)
@@ -172,3 +173,6 @@ countUntil pred st = countStarting 0
 fromSingleton :: [a] -> a
 fromSingleton (x:[]) = x
 fromSingleton xs     = error "Not a singleton list"
+
+distinct :: (Ord a) => [a] -> [a]
+distinct = Set.toList . Set.fromList
