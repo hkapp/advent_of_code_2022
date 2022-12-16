@@ -5,11 +5,11 @@ import Utils.State
 import Data.Array.IArray(Array, array)
 import qualified Data.Array.IArray as Array
 import qualified Data.Char
-import Data.List(unfoldr, sort, sortOn)
+import Data.List(unfoldr, sort, sortOn, groupBy)
 import Data.Ord(Down(..))
 import qualified Data.Ix
 import Data.Maybe(maybeToList)
-import Data.Bifunctor(Bifunctor, bimap)
+import Data.Bifunctor(Bifunctor, bimap, second)
 import qualified Data.Set as Set
 
 import Control.Monad(join)
@@ -154,3 +154,20 @@ fromSingleton xs     = error "Not a singleton list"
 
 distinct :: (Ord a) => [a] -> [a]
 distinct = Set.toList . Set.fromList
+
+{- As opposed to groupBy, this is full group by.
+   The position of the same items doesn't matter (which is why we need sort).
+-}
+groupByKey :: (Ord k) => (a -> k) -> [a] -> [(k, [a])]
+groupByKey key xs =
+  map (\ys -> (fst $ head ys, map snd ys)) $
+    groupBy (\(k1, _) (k2, _) -> k1 == k2) $
+      sortOn fst $
+        map (\x -> (key x, x)) xs
+
+-- groupByKey :: (Ord k) => (a -> k) -> [a] -> [(k, [a])]
+-- groupByKey key xs =
+  -- groupBy (\x y -> (key x) == (key y)) $ sortOn key xs
+
+groupKeyPairs :: (Ord k) => [(k, a)] -> [(k, [a])]
+groupKeyPairs = map (second $ map snd) . groupByKey fst

@@ -2,6 +2,8 @@ module Dec16 (run) where
 
 import Test(test)
 import Utils.State
+import Utils.PQueue(PQueue)
+import qualified Utils.PQueue as PQ
 
 run :: String -> IO ()
 run input =
@@ -30,11 +32,11 @@ parse = id
 {- Graph -}
 
 {- Returns the next possible states given a state path -}
-newtype Search s = Search ([s] -> [s])
-newtype Graph n = Graph (n -> [n])
+-- newtype Search s = Search ([s] -> [s])
+-- newtype Graph n = Graph (n -> [n])
 
 {- This A* search maximizes d -}
-astar :: (Ord d) => (n -> d) -> Graph n -> n -> [n]
+-- astar :: (Ord d) => (n -> d) -> Graph n -> n -> [n]
 
 -- type AStarState n d a = State (AStarSearch n d) a
 -- type AStarSearch n d = (Maybe (d, RevPath n), PQueue d (RevPath n))
