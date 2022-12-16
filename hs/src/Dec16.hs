@@ -1,6 +1,7 @@
 module Dec16 (run) where
 
 import Test(test)
+import Utils.State
 
 run :: String -> IO ()
 run input =
@@ -21,7 +22,7 @@ run input =
 
 {- Parsing -}
 
-type Res = ([Valve], [Map Room [Room]])
+-- type Res = ([Valve], [Map Room [Room]])
 
 -- parse :: String -> Field
 parse = id
@@ -154,7 +155,7 @@ modBestPath f =
     push (Just b', pq')
     return b'
 
-n :: ([Valve] {-still closed-}, Int {- remMinutes -}, Valve {- open in this state -}, Steam)
+-- n :: ([Valve] {-still closed-}, Int {- remMinutes -}, Valve {- open in this state -}, Steam)
 {- need to give no neighbours after 30 steps -}
 
 {- Task 1 -}

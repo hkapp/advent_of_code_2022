@@ -1,4 +1,6 @@
-module Utils where
+module Utils (module Utils, module Utils.State) where
+
+import Utils.State
 
 import Data.Array.IArray(Array, array)
 import qualified Data.Array.IArray as Array
@@ -10,7 +12,6 @@ import Data.Maybe(maybeToList)
 import Data.Bifunctor(Bifunctor, bimap)
 import qualified Data.Set as Set
 
-import Control.Monad.State(State, evalState, get, state)
 import Control.Monad(join)
 
 splitFirstSep :: (Eq a) => a -> [a] -> ([a], [a])
@@ -55,9 +56,6 @@ zipSquareWithIndex xs =
     withOuterRowIdx = zipWithIndex withColIdx
   in
     (\(ri, rx) -> map (\(ci, y) -> (ri, ci, y)) rx) =<< withOuterRowIdx
-
-evalStarting :: State a [a] -> a -> [a]
-evalStarting st x = x:(evalState st x)
 
 chunksOf :: Int -> [a] -> [[a]]
 chunksOf n = unfoldr f
@@ -139,15 +137,6 @@ findIndexesWhere pred = map fst . filter (pred . snd) . Array.assocs
 flattenMaybe :: [Maybe a] -> [a]
 flattenMaybe xs = xs >>= maybeToList
 
-repeatUntil :: ((a, s) -> Bool) -> State s a -> State s a
-repeatUntil cond st =
-  do
-    x <- st
-    s <- get
-    if cond (x, s)
-      then return x
-      else repeatUntil cond st
-
 intoPairs :: [a] -> [(a, a)]
 intoPairs (x:y:zs) = (x, y):(intoPairs zs)
 intoPairs []       = []
@@ -158,17 +147,6 @@ both f = bimap f f
 toMaybe :: Bool -> a -> Maybe a
 toMaybe True  x = Just x
 toMaybe False _ = Nothing
-
-countUntil :: ((a, s) -> Bool) -> State s a -> State s Int
-countUntil pred st = countStarting 0
-  where
-    countStarting n =
-      do
-        a <- st
-        s <- get
-        if pred (a, s)
-          then return n
-          else countStarting (n+1)
 
 fromSingleton :: [a] -> a
 fromSingleton (x:[]) = x
