@@ -1,5 +1,10 @@
 {- A Priority Queue -}
-module Utils.PQueue where
+module Utils.PQueue (
+  {- Directly re-exported from Map -}
+  Map.null,
+  {- Everything else in this file -}
+  module Utils.PQueue
+) where
 
 import Utils(groupKeyPairs)
 

@@ -171,3 +171,9 @@ groupByKey key xs =
 
 groupKeyPairs :: (Ord k) => [(k, a)] -> [(k, [a])]
 groupKeyPairs = map (second $ map snd) . groupByKey fst
+
+maxBy :: (Ord b) => (a -> b) -> a -> a -> a
+maxBy f x y =
+  if (f x) >= (f y)
+    then x
+    else y
