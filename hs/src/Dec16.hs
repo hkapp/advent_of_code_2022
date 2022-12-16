@@ -1,12 +1,12 @@
 module Dec16 (run) where
 
 import Test(test)
-import Utils(maxBy)
+import Utils(maxBy, parserStrip, splitSubSeq)
 import Utils.State
 import Utils.PQueue(PQueue)
 import qualified Utils.PQueue as PQ
 
-import Data.Bifunctor(second)
+import Data.Bifunctor(first, second)
 import Data.Maybe(fromMaybe)
 import Data.Map(Map ,(!))
 import qualified Data.Map as Map
@@ -14,6 +14,7 @@ import Data.Set(Set)
 import qualified Data.Set as Set
 import Data.List(sortOn)
 import Data.Ord(Down(..))
+import Data.Char(isDigit)
 
 run :: String -> IO ()
 run input =
@@ -21,9 +22,11 @@ run input =
     unitTest
     let parsed = parse input
     putStrLn "Task 1:"
-    testRun "task1" Nothing (task1 parsed)
+    -- testRun "task1" Nothing (task1 parsed)
+    print (task1 parsed)
     putStrLn "Task 2:"
-    testRun "task2" Nothing (task2 parsed)
+    print $ task2 parsed
+    -- testRun "task2" Nothing (task2 parsed)
   where
     testRun name expected found =
       do
@@ -36,8 +39,37 @@ run input =
 
 -- type Res = ([Valve], [Map Room [Room]])
 
--- parse :: String -> Field
-parse = id
+parse :: String -> Volcano
+parse = intoVolcano . map parseLine . lines
+
+parseLine :: String -> (Room, Steam, [Room])
+parseLine inputLine = (flip evalState) inputLine $
+  do
+    parserStrip "Valve "
+    room <- parseRoom
+    parserStrip " has flow rate="
+    flow <- parseFlow
+    parserStrip "; tunnels lead to valves "
+    destinations <- parseRoomList
+    return (room, flow, destinations)
+
+parseRoom :: State String Room
+parseRoom = state (splitAt 2)
+
+-- TODO move to Utils as parserInt
+parseFlow :: State String Steam
+parseFlow = state (first read . span isDigit)
+
+parseRoomList :: State String [Room]
+parseRoomList = state (\s -> (splitSubSeq ", " s, []))
+
+intoVolcano :: [(Room, Steam, [Room])] -> Volcano
+intoVolcano xs =
+  let
+    tunnels = Map.fromList $ map (\(r, _, rs) -> (r, rs)) xs
+    valves  = Map.fromList $ map (\(r, s, _)  -> (r, s))  xs
+  in
+    Volcano tunnels valves
 
 {- AStar -}
 
@@ -125,11 +157,9 @@ data Volcano = Volcano {
   tunnelNetwork :: Map Room [Room],
   allValves     :: Map Room Steam
   }
+  deriving Show
 
 type Room = String
-
-maxTimer :: Minutes
-maxTimer = 30
 
 possibleDestinations :: Volcano -> Room -> [Room]
 possibleDestinations volcano room = (tunnelNetwork volcano) ! room
@@ -163,7 +193,7 @@ instance Ord Flux where
 
 legalMoves :: Volcano -> Flux -> [Flux]
 legalMoves volcano flux =
-  if (timeLeft flux) < maxTimer
+  if (timeLeft flux) > 0
     then (tunnelMoves volcano flux) ++ (openValveMoves volcano flux)
     else []
 
@@ -236,6 +266,12 @@ startByOpening volcano flux =
     else steamSoFar flux
 
 {- Task 1 -}
+
+task1' :: Volcano -> Steam
+task1' volcano = steamSoFar $ head $ astar (legalMoves volcano) (discardFlux volcano) (initFlux volcano)
+
+initFlux :: Volcano -> Flux
+initFlux volcano = Flux 0 "AA" (Map.keysSet $ allValves volcano) 30
 
 -- task1 :: Field -> Int
 task1 = id
