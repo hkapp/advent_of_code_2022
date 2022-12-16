@@ -99,6 +99,8 @@ type AStarState n a = State (AStarSearch n) a
 type AStarSearch n = (Maybe (RevPath n), AStarQueue n)
 type AStarQueue n = PQueue n (RevPath n)
 
+type RevPath n = [n]
+
 {- Result is in reverse order -}
 {- This AStar maximizes -}
 astar :: (Ord n) => (n -> [n]) -> (n -> n -> Bool) -> n -> RevPath n

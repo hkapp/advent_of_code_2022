@@ -2,8 +2,8 @@ module Dec12 (run) where
 
 import Test(test)
 import Utils(ascii, arrayFromNestedList, withinBounds, findIndexesWhere, flattenMaybe, repeatUntil)
-import Queue(Queue)
-import qualified Queue
+import Utils.Queue(Queue)
+import qualified Utils.Queue as Queue
 
 import Data.Array.IArray(Array, (!))
 import qualified Data.Array.IArray as Array

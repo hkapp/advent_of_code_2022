@@ -4,8 +4,8 @@ import Prelude hiding (round)
 
 import Utils(arrayFromIndexedList, splitSep, splitSubSeq, stripPrefix, stripSuffix, top, parserStrip)
 import Test(test)
-import Queue(Queue)
-import qualified Queue
+import Utils.Queue(Queue)
+import qualified Utils.Queue as Queue
 
 import Control.Monad(replicateM, replicateM_)
 import Control.Monad.State(State, evalState, state, get, put)
