@@ -8,6 +8,12 @@ import qualified Utils.PQueue as PQ
 
 import Data.Bifunctor(second)
 import Data.Maybe(fromMaybe)
+import Data.Map(Map ,(!))
+import qualified Data.Map as Map
+import Data.Set(Set)
+import qualified Data.Set as Set
+import Data.List(sortOn)
+import Data.Ord(Down(..))
 
 run :: String -> IO ()
 run input =
@@ -113,8 +119,121 @@ modBestPath f =
     put (Just b', pq)
     return b'
 
--- n :: ([Valve] {-still closed-}, Int {- remMinutes -}, Valve {- open in this state -}, Steam)
-{- need to give no neighbours after 30 steps -}
+{- Volcano -}
+
+data Volcano = Volcano {
+  tunnelNetwork :: Map Room [Room],
+  allValves     :: Map Room Steam
+  }
+
+type Room = String
+
+maxTimer :: Minutes
+maxTimer = 30
+
+possibleDestinations :: Volcano -> Room -> [Room]
+possibleDestinations volcano room = (tunnelNetwork volcano) ! room
+
+valveFlow :: Volcano -> Room -> Steam
+valveFlow volcano room = (allValves volcano) ! room
+
+{- Flux -}
+
+{- Actually, partial flux (in construction) -}
+data Flux = Flux {
+  steamSoFar   :: Steam,
+  currPos      :: Room,
+  closedValves :: Set Room,
+  timeLeft     :: Minutes
+  }
+
+type Steam = Int
+type Minutes = Int
+
+{- These Eq and Ord instances are really only for AStar
+   They compare score equivalence rather than full content
+-}
+instance Eq Flux where
+  fx == fy = (steamSoFar fx) == (steamSoFar fy)
+
+instance Ord Flux where
+  compare fx fy = compare (steamSoFar fx) (steamSoFar fy)
+
+-- Flux moves
+
+legalMoves :: Volcano -> Flux -> [Flux]
+legalMoves volcano flux =
+  if (timeLeft flux) < maxTimer
+    then (tunnelMoves volcano flux) ++ (openValveMoves volcano flux)
+    else []
+
+tunnelMoves :: Volcano -> Flux -> [Flux]
+tunnelMoves volcano flux = moveTo flux <$> possibleDestinations volcano (currPos flux)
+
+moveTo :: Flux -> Room -> Flux
+moveTo (Flux steam _ valves time) newPos = Flux steam newPos valves (time - 1)
+
+openValveMoves :: Volcano -> Flux -> [Flux]
+openValveMoves volcano flux =
+  if canOpenValve flux
+    then [openValve volcano flux]
+    else []
+
+canOpenValve :: Flux -> Bool
+canOpenValve flux = Set.member (currPos flux) (closedValves flux)
+
+openValve :: Volcano -> Flux -> Flux
+openValve volcano (Flux prevSteam pos prevValves prevTime) =
+  let
+    newValves = Set.delete pos prevValves
+    newTime = prevTime - 1
+    newSteam = prevSteam + (newTime * (valveFlow volcano pos))
+  in
+    Flux newSteam pos newValves newTime
+
+-- Flux early stop
+
+{- We stop if the theoretical maximum of this flux can't exceed the current best -}
+discardFlux :: Volcano -> Flux -> Flux -> Bool
+discardFlux volcano currBest candidate = (potential volcano candidate) <= (steamSoFar currBest)
+
+{- To compute the theoretical maximum, we simply assume that we can
+   move to the highest flow valve in one move every time
+-}
+potential :: Volcano -> Flux -> Steam
+potential volcano flux =
+    max (startByMoving volcano flux) (startByOpening volcano flux)
+
+startByMoving :: Volcano -> Flux -> Steam
+startByMoving volcano flux =
+  let
+    sortedValves = sortOn (\room -> Down $ valveFlow volcano room) (Set.toList $ closedValves flux)
+
+    fluxGenerators :: [(Flux -> Flux)]
+    fluxGenerators =
+      do
+        valve <- sortedValves
+        [(flip moveTo) valve, openValve volcano]
+
+    generateFluxes :: [(Flux -> Flux)] -> Flux -> [Flux]
+    generateFluxes (gen:rem) fx = (gen fx):(generateFluxes rem (gen fx))
+    generateFluxes []        _  = []
+
+    idealFluxes :: [Flux]
+    idealFluxes = generateFluxes fluxGenerators flux
+
+    maxFlux = head $ dropWhile (\fx -> (timeLeft fx) /= 0) idealFluxes
+    maxSteam = steamSoFar maxFlux
+  in
+    if (timeLeft flux) > 0
+      then maxSteam
+      else steamSoFar flux
+
+startByOpening :: Volcano -> Flux -> Steam
+startByOpening volcano flux =
+  if (canOpenValve flux) && ((timeLeft flux) > 0)
+    then startByMoving volcano (openValve volcano flux)
+    else steamSoFar flux
 
 {- Task 1 -}
 
