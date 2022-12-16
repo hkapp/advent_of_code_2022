@@ -21,8 +21,141 @@ run input =
 
 {- Parsing -}
 
+type Res = ([Valve], [Map Room [Room]])
+
 -- parse :: String -> Field
 parse = id
+
+{- Graph -}
+
+{- Returns the next possible states given a state path -}
+newtype Search s = Search ([s] -> [s])
+newtype Graph n = Graph (n -> [n])
+
+{- This A* search maximizes d -}
+astar :: (Ord d) => (n -> d) -> Graph n -> n -> [n]
+
+-- type AStarState n d a = State (AStarSearch n d) a
+-- type AStarSearch n d = (Maybe (d, RevPath n), PQueue d (RevPath n))
+
+-- {- Result is in reverse order -}
+-- {- This AStar maximizes -}
+-- astar :: (Ord d) => (n -> [(d, n)]) -> (n -> n -> Bool) -> (d, n) -> RevPath n
+-- astar expandFrom stopEarly start =
+  -- (flip evalState) (Nothing, PQ.singleton start) $ repeatUntil stopCriteria $ expandOnce
+  -- where
+    -- expandOnce :: AStarState (RevPath n)
+    -- expandOnce =
+      -- do
+        -- (currScore, currPath) <- popNextNode
+        -- let currNode = head currPath
+        -- bestPath <- getBestPath
+        -- case bestPath of
+          -- Just best | stopEarly (head best) currNode ->
+            -- return bestPath
+          -- _ ->
+            -- {- actually need to expand-}
+            -- case expandFrom currNode of
+              -- [] ->
+                -- {- This is a final node: candidate for best path -}
+                -- considerForBestPath currScore currPath
+              -- ns ->
+                -- pushNodes (map $ second (\nnew -> (nnew:currPath)) ns)
+                -- return $ maybe [] bestPath
+
+-- getBestPath :: AStarState (Maybe (RevPath n))
+-- getBestPath = gets fst
+
+-- popNextNode :: AStarState (d, RevPath n)
+-- popNextNode = modPQ PQ.pop
+
+-- pushNodes :: [(d, RevPath n)] -> AStarState ()
+-- pushNodes ns = modPQ (\pq -> ((), PQ.pushAll ns pq))
+
+-- modPQ :: (PQueue d n -> (a, PQueue d n)) -> AStarState a
+-- modPQ f =
+  -- do
+    -- (b, pq) <- get
+    -- let (x, pq') = f pq
+    -- push (b, pq')
+    -- return x
+
+-- considerForBestPath :: (Ord d) => d -> RevPath n -> AStarState (RevPath n)
+-- considerForBestPath score path = modBestPath pickBest
+  -- where
+    -- pickBest Nothing = path
+    -- pickBest (Just (d, bestSoFar)) = max bestSoFar path
+
+-- modBestPath :: (Maybe (RevPath n) -> RevPath n) -> AStarState (RevPath n)
+-- modBestPath f =
+  -- do
+    -- (b, pq) <- get
+    -- let b' = f b
+    -- push (b', pq')
+    -- return b'
+
+type AStarState n a = State (AStarSearch n) a
+type AStarSearch n = (Maybe (RevPath n), AStarQueue n)
+type AStarQueue n = PQueue n (RevPath n)
+
+{- Result is in reverse order -}
+{- This AStar maximizes -}
+astar :: (Ord n) => (n -> [n]) -> (n -> n -> Bool) -> n -> RevPath n
+astar expandFrom stopEarly start =
+  (flip evalState) (Nothing, PQ.singleton start) $ repeatUntil stopCriteria $ expandOnce
+  where
+    expandOnce :: AStarState (RevPath n)
+    expandOnce =
+      do
+        currPath <- popNextNode
+        let currNode = head currPath
+        bestPath <- getBestPath
+        case bestPath of
+          Just best | stopEarly (head best) currNode ->
+            return bestPath
+          _ ->
+            {- actually need to expand-}
+            case expandFrom currNode of
+              [] ->
+                {- This is a final node: candidate for best path -}
+                considerForBestPath currPath
+              ns ->
+                pushNodes (map $ second (\nnew -> (nnew:currPath)) ns)
+                return $ maybe [] bestPath
+
+getBestPath :: AStarState (Maybe (RevPath n))
+getBestPath = gets fst
+
+popNextNode :: AStarState (RevPath n)
+popNextNode = snd . modPQ PQ.popMax
+
+pushNodes :: [RevPath n] -> AStarState ()
+pushNodes ns = modPQ (\pq -> ((), PQ.pushAll ns pq))
+
+modPQ :: (AStarQueue n -> (a, AStarQueue n)) -> AStarState a
+modPQ f =
+  do
+    (b, pq) <- get
+    let (x, pq') = f pq
+    push (b, pq')
+    return x
+
+considerForBestPath :: (Ord n) => RevPath n -> AStarState (RevPath n)
+considerForBestPath path = modBestPath pickBest
+  where
+    pickBest Nothing = path
+    pickBest (Just (bestSoFar)) = maxBy head bestSoFar path
+
+modBestPath :: (Maybe (RevPath n) -> RevPath n) -> AStarState (RevPath n)
+modBestPath f =
+  do
+    (b, pq) <- get
+    let b' = f b
+    push (Just b', pq')
+    return b'
+
+n :: ([Valve] {-still closed-}, Int {- remMinutes -}, Valve {- open in this state -}, Steam)
+{- need to give no neighbours after 30 steps -}
 
 {- Task 1 -}
 
