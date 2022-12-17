@@ -5,7 +5,7 @@ if [ ! -d bin ] ; then
 fi
 
 cd src
-ghc -outputdir ../bin -o ../bin/Main Main.hs
+ghc -O2 -outputdir ../bin -o ../bin/Main Main.hs
 compsta=$?
 
 if [ $compsta -ne 0 ]; then

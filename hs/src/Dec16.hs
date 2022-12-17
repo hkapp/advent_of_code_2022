@@ -1,7 +1,7 @@
 module Dec16 (run) where
 
 import Test(test)
-import Utils(maxBy, parserStrip, splitSubSeq, parserInt)
+import Utils(maxBy, parserStrip, splitSubSeq, parserInt, padRight)
 import Utils.State
 import Utils.PQueue(PQueue)
 import qualified Utils.PQueue as PQ
@@ -20,6 +20,7 @@ import Data.Char(isDigit)
 import Data.Word(Word32)
 
 import System.IO.Unsafe(unsafePerformIO)
+import System.Random(randomIO)
 
 run :: String -> IO ()
 run input =
@@ -33,18 +34,15 @@ run input =
     print stats1
     -- Before the refactoring for part 2:
     -- AStarStats {stopEarlyCount = 1899600, fullPathsCount = 99, nodesExpanded = 2860962}
+    -- After the change in potential computation:
+    -- AStarStats {stopEarlyCount = 7508930, fullPathsCount = 99, nodesExpanded = 11353475}
     test "task1 (real input)" 2077 res1
 
     putStrLn "Task 2:"
-    print $ task2 parsed
+    let (res2, stats2) = task2 parsed
+    print res2
+    print stats2
     -- testRun "task2" Nothing (task2 parsed)
-  where
-    testRun name expected found =
-      do
-        case expected of
-          Just expres -> test (name ++ " (real input)") expres found
-          Nothing     -> return ()
-        print found
 
 {- Parsing -}
 
@@ -106,6 +104,7 @@ astar expandFrom stopEarly start =
     expandOnce =
       do
         currPath <- popNextNode
+        maybePrintStats
         let currNode = headDbg "97" currPath --(unsafePerformIO $ print currPath >>= (const $ return currPath))
         bestPath <- getBestPath
         case bestPath of
@@ -139,6 +138,18 @@ astar expandFrom stopEarly start =
 -- TODO remove
 debugPrint :: String -> a -> a
 debugPrint msg x = unsafePerformIO $ putStrLn msg >>= (const $ return x)
+
+-- TODO remove
+maybePrintStats :: AStarState n ()
+maybePrintStats =
+  do
+    stats <- gets astarStats
+    unsafePerformIO $
+      do
+        x <- (randomIO :: IO Word32)
+        if (x `mod` 1000000) == 0
+          then print stats >>= (const $ return (return ()))
+          else return (return ())
 
 getBestPath :: AStarState n (Maybe (RevPath n))
 getBestPath = gets astarCurrBest
@@ -258,6 +269,9 @@ legalMoves volcano flux =
 hasLegalMoves :: Flux -> Bool
 hasLegalMoves flux = ((timeLeft flux) > 0) && (hasClosedValves flux)
 
+noLegalMoves :: Flux -> Bool
+noLegalMoves = not . hasLegalMoves
+
 hasClosedValves :: Flux -> Bool
 hasClosedValves flux = not $ Set.null $ closedValves flux
 
@@ -276,7 +290,7 @@ moveTo flux@(Flux steam _ valves time) newWorkerPos =
 
 openValveMoves :: Volcano -> Flux -> [Flux]
 openValveMoves volcano flux =
-  if (canOpenValve flux) && ((valveFlow volcano (currWorkerPos flux)) > 0) -- secondPart should now be redundant with initFlow
+  if canOpenValve flux
     then [openValve volcano flux]
     else []
 
@@ -313,9 +327,61 @@ moveSpaceAndTime mv flux =
 discardFlux :: Volcano -> Flux -> Flux -> Bool
 discardFlux volcano currBest candidate = (potential volcano candidate) <= (steamSoFar currBest)
 
+type Stack a = [a]
+data Walk = Move [Room] | Open (Stack Room)
+
 {- To compute the theoretical maximum, we simply assume that we can
    move to the highest flow valve in one move every time
 -}
+potential :: Volcano -> Flux -> Steam
+potential volcano flux =
+    -- max (startByMoving volcano flux) (startByOpening volcano flux)
+  let
+    workerCount = szCount $ eachPos flux
+
+
+    walk :: [Room] -> Walk -> Flux -> Flux
+
+    walk [] (Open _) flux = flux
+
+    walk _ _ flux | noLegalMoves flux = flux
+
+    walk (r:rs) (Open opened) flux =
+      if (length opened) < workerCount
+        then walk rs (Open (r:opened)) (openValve volcano flux)
+        else walk (r:rs) (Move $ reverse opened) flux
+
+    walk rs (Move []) flux = walk rs (Open []) flux
+
+    walk rs (Move (m:ms)) flux = walk rs (Move ms) (moveTo flux m)
+
+
+    sortedValves = sortOn (\room -> Down $ valveFlow volcano room) (Set.toList $ closedValves flux)
+
+    startingValves = padRight workerCount someRoom $ take workerCount sortedValves
+    someRoom = currWorkerPos flux
+
+    maxFlux = walk sortedValves (Open []) $ teleport startingValves flux
+    maxSteam = steamSoFar maxFlux
+  in
+    maxSteam
+    -- if hasLegalMoves flux
+      -- then maxSteam
+      -- else steamSoFar flux
+
+-- Move each worker to the given room, without updating the time
+teleport :: [Room] -> Flux -> Flux
+
+teleport (r:rs) (Flux steam wpos valves time) =
+  let
+    (_, newPos) = szMove (const r) wpos
+  in
+    teleport rs (Flux steam newPos valves time)
+
+teleport [] flux = flux
+
+-- More precise approximation, but doesn't generalize easily to more than one worker:
+{-
 potential :: Volcano -> Flux -> Steam
 potential volcano flux =
     max (startByMoving volcano flux) (startByOpening volcano flux)
@@ -355,6 +421,7 @@ startByOpening volcano flux =
   if (canOpenValve flux) && (hasLegalMoves flux)--((timeLeft flux) > 0)
     then startByMoving volcano (openValve volcano flux)
     else steamSoFar flux
+-}
 
 {- Task 1 -}
 
@@ -363,19 +430,29 @@ headDbg :: String -> [a] -> a
 headDbg msg [] = error msg
 headDbg _   xs = head xs
 
+searchVolcano :: (Volcano -> Flux) -> Volcano -> (Steam, AStarStats)
+searchVolcano buildFlux volcano =
+  first (steamSoFar . headDbg "281") $ astar (legalMoves volcano) (discardFlux volcano) (buildFlux volcano)
+
 task1 :: Volcano -> (Steam, AStarStats)
-task1 volcano = first (steamSoFar . headDbg "281") $ astar (legalMoves volcano) (discardFlux volcano) (initSoloFlux volcano)
+task1 = searchVolcano initSoloFlux
+
+initFlux :: Int -> Minutes -> Volcano -> Flux
+initFlux nWorkers totTime volcano = Flux 0 sz valves totTime
+  where
+    sz = serialize (take nWorkers $ repeat "AA")
+    valves = Set.filter (\valve -> (valveFlow volcano valve) > 0) $ Map.keysSet $ allValves volcano
 
 initSoloFlux :: Volcano -> Flux
-initSoloFlux volcano = Flux 0 sz valves 30
-  where
-    sz = serialize ["AA"]
-    valves = Set.filter (\valve -> (valveFlow volcano valve) > 0) $ Map.keysSet $ allValves volcano
+initSoloFlux = initFlux 1 30
 
 {- Task 2 -}
 
--- task2 :: Field -> Integer
-task2 = id
+task2 :: Volcano -> (Steam, AStarStats)
+task2 = searchVolcano initTeamFlux
+
+initTeamFlux :: Volcano -> Flux
+initTeamFlux = initFlux 2 26
 
 {- Serialized -}
 {- We simulate the "parallel" human and elephant actions by having them
@@ -416,6 +493,9 @@ szMove f (Serialized q) =
 szPeek :: Serialized a -> (a, Bool)
 szPeek (Serialized q) = Queue.peek q
 
+szCount :: Serialized a -> Int
+szCount (Serialized q) = Queue.length q
+
 {- Unit Test -}
 
 unitTest :: IO ()
@@ -442,4 +522,5 @@ validateExample :: IO ()
 validateExample =
   do
     test "task1 example" 1651 (fst $ task1 exampleParsed)
-    -- test "task2 example" 56000011 (task2Param 0 20 exampleParsed)
+    putStrLn "task2 example"
+    test "task2 example" 1707 (fst $ task2 exampleParsed)

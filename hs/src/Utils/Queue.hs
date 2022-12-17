@@ -1,4 +1,13 @@
-module Utils.Queue where
+module Utils.Queue (
+  -- Re-exports from Data.Seq
+  Seq.null,
+  Seq.fromList,
+  Seq.length,
+  Seq.singleton,
+  -- Everything in this file
+  module Utils.Queue
+)
+where
 
 import Data.Sequence (Seq(..), (><))
 import qualified Data.Sequence as Seq
@@ -11,18 +20,8 @@ push = flip (Seq.|>)
 pop :: Queue a -> (a, Queue a)
 pop (x:<|xs) = (x, xs)
 
-null :: Queue a -> Bool
-null = Seq.null
-
-{- Popping will get the elements in the same order as in the original list -}
-fromList :: [a] -> Queue a
-fromList = Seq.fromList
-
 pushAll :: Queue a -> [a] -> Queue a
-pushAll queue newElems = queue >< (fromList newElems)
-
-singleton :: a -> Queue a
-singleton = Seq.singleton
+pushAll queue newElems = queue >< (Seq.fromList newElems)
 
 -- The next element in the queue gets pushed to the end and returned outside
 rotate :: Queue a -> (a, Queue a)

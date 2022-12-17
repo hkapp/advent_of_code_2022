@@ -181,3 +181,7 @@ maxBy f x y =
   if (f x) >= (f y)
     then x
     else y
+
+padRight :: Int -> a -> [a] -> [a]
+padRight minLength _ xs | length xs >= minLength = xs
+padRight minLength y xs = xs ++ (take (minLength - length xs) (repeat y))
