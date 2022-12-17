@@ -1,7 +1,7 @@
 module Dec16 (run) where
 
 import Test(test)
-import Utils(maxBy, parserStrip, splitSubSeq)
+import Utils(maxBy, parserStrip, splitSubSeq, parserInt)
 import Utils.State
 import Utils.PQueue(PQueue)
 import qualified Utils.PQueue as PQ
@@ -31,6 +31,7 @@ run input =
     let (res1, stats1) = task1 parsed
     print res1
     print stats1
+    -- Before the refactoring for part 2:
     -- AStarStats {stopEarlyCount = 1899600, fullPathsCount = 99, nodesExpanded = 2860962}
     test "task1 (real input)" 2077 res1
 
@@ -64,9 +65,8 @@ parseLine inputLine = (flip evalState) inputLine $
 parseRoom :: State String Room
 parseRoom = state (splitAt 2)
 
--- TODO move to Utils as parserInt
 parseFlow :: State String Steam
-parseFlow = state (first read . span isDigit)
+parseFlow = parserInt
 
 parseRoomList :: State String [Room]
 parseRoomList = state (\s -> (splitSubSeq ", " s, []))
@@ -229,7 +229,7 @@ valveFlow volcano room = (allValves volcano) ! room
 {- Actually, partial flux (in construction) -}
 data Flux = Flux {
   steamSoFar   :: Steam,
-  currPos      :: Room,
+  eachPos      :: Serialized Room, -- the current room of each worker
   closedValves :: Set Room,
   timeLeft     :: Minutes
   }
@@ -262,31 +262,50 @@ hasClosedValves :: Flux -> Bool
 hasClosedValves flux = not $ Set.null $ closedValves flux
 
 tunnelMoves :: Volcano -> Flux -> [Flux]
-tunnelMoves volcano flux = moveTo flux <$> possibleDestinations volcano (currPos flux)
--- TODO update currPos to currWorkerPos
+tunnelMoves volcano flux = moveTo flux <$> possibleDestinations volcano (currWorkerPos flux)
+
+currWorkerPos :: Flux -> Room
+currWorkerPos flux = fst $ szPeek $ eachPos flux
 
 moveTo :: Flux -> Room -> Flux
-moveTo (Flux steam _ valves time) newPos = Flux steam newPos valves (time - 1)
--- TODO account for Serialized
+moveTo flux@(Flux steam _ valves time) newWorkerPos =
+  let
+    (newPos, newTime) = moveSpaceAndTime (const newWorkerPos) flux
+  in
+    Flux steam newPos valves newTime
 
 openValveMoves :: Volcano -> Flux -> [Flux]
 openValveMoves volcano flux =
-  if (canOpenValve flux) && ((valveFlow volcano (currPos flux)) > 0) -- secondPart should now be redundant with initFlow
+  if (canOpenValve flux) && ((valveFlow volcano (currWorkerPos flux)) > 0) -- secondPart should now be redundant with initFlow
     then [openValve volcano flux]
     else []
 
 canOpenValve :: Flux -> Bool
-canOpenValve flux = Set.member (currPos flux) (closedValves flux)
+canOpenValve flux = Set.member (currWorkerPos flux) (closedValves flux)
 
 openValve :: Volcano -> Flux -> Flux
-openValve volcano (Flux prevSteam pos prevValves prevTime) =
+openValve volcano flux@(Flux prevSteam wpos prevValves prevTime) =
   let
+    pos = currWorkerPos flux
     newValves = Set.delete pos prevValves
-    newTime = prevTime - 1
-    -- TODO take into account Serialized
-    newSteam = prevSteam + (newTime * (valveFlow volcano pos))
+    timeValveOpen = prevTime - 1
+    newSteam = prevSteam + (timeValveOpen * (valveFlow volcano pos))
+    -- Space doesn't move
+    (newPos, newTime) = moveSpaceAndTime id flux
   in
-    Flux newSteam pos newValves newTime
+    Flux newSteam newPos newValves newTime
+
+moveSpaceAndTime :: (Room -> Room) -> Flux -> (Serialized Room, Minutes)
+moveSpaceAndTime mv flux =
+  let
+    (roundComplete, newPos) = szMove mv (eachPos flux)
+    prevTime = timeLeft flux
+    newTime =
+      if roundComplete
+        then prevTime - 1
+        else prevTime
+  in
+    (newPos, newTime)
 
 -- Flux early stop
 
@@ -345,10 +364,13 @@ headDbg msg [] = error msg
 headDbg _   xs = head xs
 
 task1 :: Volcano -> (Steam, AStarStats)
-task1 volcano = first (steamSoFar . headDbg "281") $ astar (legalMoves volcano) (discardFlux volcano) (initFlux volcano)
+task1 volcano = first (steamSoFar . headDbg "281") $ astar (legalMoves volcano) (discardFlux volcano) (initSoloFlux volcano)
 
-initFlux :: Volcano -> Flux
-initFlux volcano = Flux 0 "AA" (Set.filter (\valve -> (valveFlow volcano valve) > 0) $ Map.keysSet $ allValves volcano) 30
+initSoloFlux :: Volcano -> Flux
+initSoloFlux volcano = Flux 0 sz valves 30
+  where
+    sz = serialize ["AA"]
+    valves = Set.filter (\valve -> (valveFlow volcano valve) > 0) $ Map.keysSet $ allValves volcano
 
 {- Task 2 -}
 
@@ -369,6 +391,7 @@ task2 = id
    entry. This signals when we need to decrease the timer.
 -}
 newtype Serialized a = Serialized (Queue (a, Bool))
+  deriving Show
 
 serialize :: [a] -> Serialized a
 serialize xs = Serialized $ Queue.fromList (szList xs)
@@ -379,8 +402,19 @@ serialize xs = Serialized $ Queue.fromList (szList xs)
 -- Note that this rotates the queue completely
 -- The queue never reduces in size
 -- Note: for performance, we could actually use a ring buffer here
-szNext :: Serialized a -> ((a, Bool), Serialized a)
-szNext (Serialized q) = second Serialized $ Queue.rotate q
+-- szNext :: Serialized a -> ((a, Bool), Serialized a)
+-- szNext (Serialized q) = second Serialized $ Queue.rotate q
+
+szMove :: (a -> a) -> Serialized a -> (Bool, Serialized a)
+szMove f (Serialized q) =
+  let
+    ((x, mrk), poppedQ) = Queue.pop q
+    newQ = Queue.push (f x, mrk) poppedQ
+  in
+    (mrk, Serialized newQ)
+
+szPeek :: Serialized a -> (a, Bool)
+szPeek (Serialized q) = Queue.peek q
 
 {- Unit Test -}
 

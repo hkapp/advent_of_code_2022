@@ -31,3 +31,6 @@ rotate q =
     (elem, poppedQ) = pop q
   in
     (elem, push elem poppedQ)
+
+peek :: Queue a -> a
+peek (x:<|xs) = x

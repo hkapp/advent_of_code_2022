@@ -5,11 +5,12 @@ import Utils.State
 import Data.Array.IArray(Array, array)
 import qualified Data.Array.IArray as Array
 import qualified Data.Char
+import Data.Char(isDigit)
 import Data.List(unfoldr, sort, sortOn, groupBy)
 import Data.Ord(Down(..))
 import qualified Data.Ix
 import Data.Maybe(maybeToList)
-import Data.Bifunctor(Bifunctor, bimap, second)
+import Data.Bifunctor(Bifunctor, bimap, first, second)
 import qualified Data.Set as Set
 
 import Control.Monad(join)
@@ -103,6 +104,9 @@ stripSuffix toStrip = stripBy splitStr toStrip
 
 parserStrip :: String -> State String ()
 parserStrip prefix = state (\s -> ((), stripPrefix prefix s))
+
+parserInt :: State String Int
+parserInt = state (first read . span isDigit)
 
 top :: (Ord a) => Int -> [a] -> [a]
 top n = take n . sortOn Down
