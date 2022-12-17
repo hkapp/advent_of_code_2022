@@ -12,9 +12,11 @@ import Data.Map(Map ,(!))
 import qualified Data.Map as Map
 import Data.Set(Set)
 import qualified Data.Set as Set
-import Data.List(sortOn)
+import Data.List(sortOn, find)
 import Data.Ord(Down(..))
 import Data.Char(isDigit)
+
+import System.IO.Unsafe(unsafePerformIO)
 
 run :: String -> IO ()
 run input =
@@ -22,8 +24,8 @@ run input =
     unitTest
     let parsed = parse input
     putStrLn "Task 1:"
-    -- testRun "task1" Nothing (task1 parsed)
-    print (task1 parsed)
+    testRun "task1" (Just 2077) (task1 parsed)
+    -- print (task1 parsed)
     putStrLn "Task 2:"
     print $ task2 parsed
     -- testRun "task2" Nothing (task2 parsed)
@@ -81,7 +83,7 @@ type RevPath n = [n]
 
 {- Result is in reverse order -}
 {- This AStar maximizes -}
-astar :: (Ord n) => (n -> [n]) -> (n -> n -> Bool) -> n -> RevPath n
+astar :: (Ord n, Show n) => (n -> [n]) -> (n -> n -> Bool) -> n -> RevPath n
 astar expandFrom stopEarly start =
   (flip evalState) initState $ repeatUntil stopCriteria expandOnce
   where
@@ -92,19 +94,22 @@ astar expandFrom stopEarly start =
     expandOnce =
       do
         currPath <- popNextNode
-        let currNode = head currPath
+        let currNode = headDbg "97" currPath --(unsafePerformIO $ print currPath >>= (const $ return currPath))
         bestPath <- getBestPath
         case bestPath of
-          Just best | stopEarly (head best) currNode ->
+          Just best | stopEarly (headDbg "100" best) currNode ->
+            -- (debugPrint "Filtered out a path" return) best
             return best
           _ ->
             {- actually need to expand-}
             case expandFrom currNode of
               [] ->
                 {- This is a final node: candidate for best path -}
+                -- (debugPrint "Reached final path" considerForBestPath) currPath
                 considerForBestPath currPath
               ns ->
                 do
+                  -- (debugPrint ("Expanded " ++ (show $ length ns) ++ " nodes") pushNodes) (map (\nnew -> (nnew:currPath)) ns)
                   pushNodes (map (\nnew -> (nnew:currPath)) ns)
                   return $ fromMaybe [] bestPath
 
@@ -113,6 +118,9 @@ astar expandFrom stopEarly start =
 
     -- initState :: AStarSearch n
     initState = (Nothing, PQ.singleton start [start])
+
+debugPrint :: String -> a -> a
+debugPrint msg x = unsafePerformIO $ putStrLn msg >>= (const $ return x)
 
 getBestPath :: AStarState n (Maybe (RevPath n))
 getBestPath = gets fst
@@ -125,7 +133,7 @@ pushNodes ns = modPQ f
   where
     f pq =
       let
-        nsWithKey = map (\n -> (head n, n)) ns
+        nsWithKey = map (\n -> (headDbg "133" n, n)) ns
       in
         ((), PQ.pushAll nsWithKey pq)
 
@@ -141,7 +149,7 @@ considerForBestPath :: (Ord n) => RevPath n -> AStarState n (RevPath n)
 considerForBestPath path = modBestPath pickBest
   where
     pickBest Nothing = path
-    pickBest (Just (bestSoFar)) = maxBy head bestSoFar path
+    pickBest (Just (bestSoFar)) = maxBy (headDbg "149") bestSoFar path
 
 modBestPath :: (Maybe (RevPath n) -> RevPath n) -> AStarState n (RevPath n)
 modBestPath f =
@@ -176,6 +184,7 @@ data Flux = Flux {
   closedValves :: Set Room,
   timeLeft     :: Minutes
   }
+  deriving Show
 
 type Steam = Int
 type Minutes = Int
@@ -193,9 +202,15 @@ instance Ord Flux where
 
 legalMoves :: Volcano -> Flux -> [Flux]
 legalMoves volcano flux =
-  if (timeLeft flux) > 0
+  if hasLegalMoves flux
     then (tunnelMoves volcano flux) ++ (openValveMoves volcano flux)
     else []
+
+hasLegalMoves :: Flux -> Bool
+hasLegalMoves flux = ((timeLeft flux) > 0) && (hasClosedValves flux)
+
+hasClosedValves :: Flux -> Bool
+hasClosedValves flux = not $ Set.null $ closedValves flux
 
 tunnelMoves :: Volcano -> Flux -> [Flux]
 tunnelMoves volcano flux = moveTo flux <$> possibleDestinations volcano (currPos flux)
@@ -205,7 +220,7 @@ moveTo (Flux steam _ valves time) newPos = Flux steam newPos valves (time - 1)
 
 openValveMoves :: Volcano -> Flux -> [Flux]
 openValveMoves volcano flux =
-  if canOpenValve flux
+  if (canOpenValve flux) && ((valveFlow volcano (currPos flux)) > 0) -- secondPart should now be redundant with initFlow
     then [openValve volcano flux]
     else []
 
@@ -252,29 +267,33 @@ startByMoving volcano flux =
     idealFluxes :: [Flux]
     idealFluxes = generateFluxes fluxGenerators flux
 
-    maxFlux = head $ dropWhile (\fx -> (timeLeft fx) /= 0) idealFluxes
+    -- maxFlux = (headDbg ("261: " ++ (show sortedValves) ++ (show $ timeLeft flux))) $ dropWhile (\fx -> (timeLeft fx) /= 0) idealFluxes
+    -- If the list is too short, just pick the last one
+    maxFlux = fromMaybe (last idealFluxes) $ find (\fx -> (timeLeft fx) == 0) idealFluxes
     maxSteam = steamSoFar maxFlux
   in
-    if (timeLeft flux) > 0
+    if hasLegalMoves flux
       then maxSteam
       else steamSoFar flux
 
 startByOpening :: Volcano -> Flux -> Steam
 startByOpening volcano flux =
-  if (canOpenValve flux) && ((timeLeft flux) > 0)
+  if (canOpenValve flux) && (hasLegalMoves flux)--((timeLeft flux) > 0)
     then startByMoving volcano (openValve volcano flux)
     else steamSoFar flux
 
 {- Task 1 -}
 
-task1' :: Volcano -> Steam
-task1' volcano = steamSoFar $ head $ astar (legalMoves volcano) (discardFlux volcano) (initFlux volcano)
+-- TODO remove
+headDbg :: String -> [a] -> a
+headDbg msg [] = error msg
+headDbg _   xs = head xs
+
+task1 :: Volcano -> Steam
+task1 volcano = steamSoFar $ headDbg "281" $ astar (legalMoves volcano) (discardFlux volcano) (initFlux volcano)
 
 initFlux :: Volcano -> Flux
-initFlux volcano = Flux 0 "AA" (Map.keysSet $ allValves volcano) 30
-
--- task1 :: Field -> Int
-task1 = id
+initFlux volcano = Flux 0 "AA" (Set.filter (\valve -> (valveFlow volcano valve) > 0) $ Map.keysSet $ allValves volcano) 30
 
 {- Task 2 -}
 
@@ -289,27 +308,22 @@ unitTest =
     validateExample
 
 example = unlines [
-  "Sensor at x=2, y=18: closest beacon is at x=-2, y=15",
-  "Sensor at x=9, y=16: closest beacon is at x=10, y=16",
-  "Sensor at x=13, y=2: closest beacon is at x=15, y=3",
-  "Sensor at x=12, y=14: closest beacon is at x=10, y=16",
-  "Sensor at x=10, y=20: closest beacon is at x=10, y=16",
-  "Sensor at x=14, y=17: closest beacon is at x=10, y=16",
-  "Sensor at x=8, y=7: closest beacon is at x=2, y=10",
-  "Sensor at x=2, y=0: closest beacon is at x=2, y=10",
-  "Sensor at x=0, y=11: closest beacon is at x=2, y=10",
-  "Sensor at x=20, y=14: closest beacon is at x=25, y=17",
-  "Sensor at x=17, y=20: closest beacon is at x=21, y=22",
-  "Sensor at x=16, y=7: closest beacon is at x=15, y=3",
-  "Sensor at x=14, y=3: closest beacon is at x=15, y=3",
-  "Sensor at x=20, y=1: closest beacon is at x=15, y=3"
+  "Valve AA has flow rate=0; tunnels lead to valves DD, II, BB",
+  "Valve BB has flow rate=13; tunnels lead to valves CC, AA",
+  "Valve CC has flow rate=2; tunnels lead to valves DD, BB",
+  "Valve DD has flow rate=20; tunnels lead to valves CC, AA, EE",
+  "Valve EE has flow rate=3; tunnels lead to valves FF, DD",
+  "Valve FF has flow rate=0; tunnels lead to valves EE, GG",
+  "Valve GG has flow rate=0; tunnels lead to valves FF, HH",
+  "Valve HH has flow rate=22; tunnels lead to valves GG",
+  "Valve II has flow rate=0; tunnels lead to valves AA, JJ",
+  "Valve JJ has flow rate=21; tunnels lead to valves II"
   ]
 
 exampleParsed = parse example
 
 validateExample :: IO ()
-validateExample = return ()
-  -- do
-    -- test "task1 example" [(-2, 24)] (fieldInfluenceOnLine 10 exampleParsed)
-    -- test "task1 example" 26 (task1Param 10 exampleParsed)
+validateExample =
+  do
+    test "task1 example" 1651 (task1 exampleParsed)
     -- test "task2 example" 56000011 (task2Param 0 20 exampleParsed)

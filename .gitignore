@@ -8,3 +8,5 @@ rs/*/Cargo.lock
 *.hi
 *.o
 hs/bin
+
+*.png
