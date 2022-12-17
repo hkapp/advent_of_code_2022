@@ -5,6 +5,8 @@ import Utils(maxBy, parserStrip, splitSubSeq)
 import Utils.State
 import Utils.PQueue(PQueue)
 import qualified Utils.PQueue as PQ
+import Utils.Queue(Queue)
+import qualified Utils.Queue as Queue
 
 import Data.Bifunctor(first, second)
 import Data.Maybe(fromMaybe)
@@ -214,9 +216,11 @@ hasClosedValves flux = not $ Set.null $ closedValves flux
 
 tunnelMoves :: Volcano -> Flux -> [Flux]
 tunnelMoves volcano flux = moveTo flux <$> possibleDestinations volcano (currPos flux)
+-- TODO update currPos to currWorkerPos
 
 moveTo :: Flux -> Room -> Flux
 moveTo (Flux steam _ valves time) newPos = Flux steam newPos valves (time - 1)
+-- TODO account for Serialized
 
 openValveMoves :: Volcano -> Flux -> [Flux]
 openValveMoves volcano flux =
@@ -232,6 +236,7 @@ openValve volcano (Flux prevSteam pos prevValves prevTime) =
   let
     newValves = Set.delete pos prevValves
     newTime = prevTime - 1
+    -- TODO take into account Serialized
     newSteam = prevSteam + (newTime * (valveFlow volcano pos))
   in
     Flux newSteam pos newValves newTime
@@ -259,6 +264,7 @@ startByMoving volcano flux =
       do
         valve <- sortedValves
         [(flip moveTo) valve, openValve volcano]
+    -- TODO update for Serialized
 
     generateFluxes :: [(Flux -> Flux)] -> Flux -> [Flux]
     generateFluxes (gen:rem) fx = (gen fx):(generateFluxes rem (gen fx))
@@ -269,6 +275,8 @@ startByMoving volcano flux =
 
     -- maxFlux = (headDbg ("261: " ++ (show sortedValves) ++ (show $ timeLeft flux))) $ dropWhile (\fx -> (timeLeft fx) /= 0) idealFluxes
     -- If the list is too short, just pick the last one
+    -- TODO can't we simply use dropWhile hasLegalMoves?
+    --   ~> if we also generate the input flux as part of the generators, we can forego the explicit legalMoves check
     maxFlux = fromMaybe (last idealFluxes) $ find (\fx -> (timeLeft fx) == 0) idealFluxes
     maxSteam = steamSoFar maxFlux
   in
@@ -299,6 +307,33 @@ initFlux volcano = Flux 0 "AA" (Set.filter (\valve -> (valveFlow volcano valve) 
 
 -- task2 :: Field -> Integer
 task2 = id
+
+{- Serialized -}
+{- We simulate the "parallel" human and elephant actions by having them
+   take turns. We only decrease the timer once both took an action.
+   We generalize this to any number of "parallel" processors such that the
+   logic also works for part 1, i.e. with a single processor.
+   This is a form of serialization (we see parallel actions as though they
+   were sequential).
+-}
+
+{- The Bool acts as a marker.
+   In the Queue, the boolean is always false, except for one
+   entry. This signals when we need to decrease the timer.
+-}
+newtype Serialized a = Serialized (Queue (a, Bool))
+
+serialize :: [a] -> Serialized a
+serialize xs = Serialized $ Queue.fromList (szList xs)
+  where
+    szList (x:y:zs) = (x, False):(szList (y:zs))
+    szList (z:[])   = [(z, True)]
+
+-- Note that this rotates the queue completely
+-- The queue never reduces in size
+-- Note: for performance, we could actually use a ring buffer here
+szNext :: Serialized a -> ((a, Bool), Serialized a)
+szNext (Serialized q) = second Serialized $ Queue.rotate q
 
 {- Unit Test -}
 

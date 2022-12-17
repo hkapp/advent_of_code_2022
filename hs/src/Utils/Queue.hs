@@ -23,3 +23,11 @@ pushAll queue newElems = queue >< (fromList newElems)
 
 singleton :: a -> Queue a
 singleton = Seq.singleton
+
+-- The next element in the queue gets pushed to the end and returned outside
+rotate :: Queue a -> (a, Queue a)
+rotate q =
+  let
+    (elem, poppedQ) = pop q
+  in
+    (elem, push elem poppedQ)
