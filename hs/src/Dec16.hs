@@ -17,6 +17,7 @@ import qualified Data.Set as Set
 import Data.List(sortOn, find)
 import Data.Ord(Down(..))
 import Data.Char(isDigit)
+import Data.Word(Word32)
 
 import System.IO.Unsafe(unsafePerformIO)
 
@@ -25,9 +26,14 @@ run input =
   do
     unitTest
     let parsed = parse input
+
     putStrLn "Task 1:"
-    testRun "task1" (Just 2077) (task1 parsed)
-    -- print (task1 parsed)
+    let (res1, stats1) = task1 parsed
+    print res1
+    print stats1
+    -- AStarStats {stopEarlyCount = 1899600, fullPathsCount = 99, nodesExpanded = 2860962}
+    test "task1 (real input)" 2077 res1
+
     putStrLn "Task 2:"
     print $ task2 parsed
     -- testRun "task2" Nothing (task2 parsed)
@@ -40,8 +46,6 @@ run input =
         print found
 
 {- Parsing -}
-
--- type Res = ([Valve], [Map Room [Room]])
 
 parse :: String -> Volcano
 parse = intoVolcano . map parseLine . lines
@@ -81,7 +85,8 @@ type AStarState n a = State (AStarSearch n) a
 
 data AStarSearch n = AStarSearch {
   astarCurrBest  :: Maybe (RevPath n),
-  astarWorkQueue :: AStarQueue n
+  astarWorkQueue :: AStarQueue n,
+  astarStats     :: AStarStats
   }
 
 type AStarQueue n = PQueue n (RevPath n)
@@ -90,9 +95,9 @@ type RevPath n = [n]
 
 {- Result is in reverse order -}
 {- This AStar maximizes -}
-astar :: (Ord n, Show n) => (n -> [n]) -> (n -> n -> Bool) -> n -> RevPath n
+astar :: (Ord n, Show n) => (n -> [n]) -> (n -> n -> Bool) -> n -> (RevPath n, AStarStats)
 astar expandFrom stopEarly start =
-  (flip evalState) initState $ repeatUntil stopCriteria expandOnce
+  second astarStats $ (flip runState) initState $ repeatUntil stopCriteria expandOnce
   where
     -- With the following signature, ghc assumes that the 'n' below is
     -- free, and not bound to the enclosing 'n'
@@ -106,17 +111,22 @@ astar expandFrom stopEarly start =
         case bestPath of
           Just best | stopEarly (headDbg "100" best) currNode ->
             -- (debugPrint "Filtered out a path" return) best
-            return best
+            do
+              incStopEarlyCount
+              return best
           _ ->
             {- actually need to expand-}
             case expandFrom currNode of
               [] ->
                 {- This is a final node: candidate for best path -}
                 -- (debugPrint "Reached final path" considerForBestPath) currPath
-                considerForBestPath currPath
+                do
+                  incFullPathsCount
+                  considerForBestPath currPath
               ns ->
                 do
                   -- (debugPrint ("Expanded " ++ (show $ length ns) ++ " nodes") pushNodes) (map (\nnew -> (nnew:currPath)) ns)
+                  incNodesExpandedCount $ length ns
                   pushNodes (map (\nnew -> (nnew:currPath)) ns)
                   return $ fromMaybe [] bestPath
 
@@ -124,8 +134,9 @@ astar expandFrom stopEarly start =
     stopCriteria (_, s) = PQ.null $ astarWorkQueue s
 
     -- initState :: AStarSearch n
-    initState = AStarSearch Nothing (PQ.singleton start [start])
+    initState = AStarSearch Nothing (PQ.singleton start [start]) initStats
 
+-- TODO remove
 debugPrint :: String -> a -> a
 debugPrint msg x = unsafePerformIO $ putStrLn msg >>= (const $ return x)
 
@@ -153,7 +164,7 @@ modPQ f =
     return x
 
 withAStarQueue :: (AStarQueue n -> AStarQueue n) -> AStarSearch n -> AStarSearch n
-withAStarQueue f (AStarSearch currBest pq) = AStarSearch currBest (f pq)
+withAStarQueue f (AStarSearch currBest pq stats) = AStarSearch currBest (f pq) stats
 
 considerForBestPath :: (Ord n) => RevPath n -> AStarState n (RevPath n)
 considerForBestPath path = modBestPath pickBest
@@ -170,8 +181,32 @@ modBestPath f =
     return $ b'
 
 withAStarCurrBest :: (Maybe (RevPath n) -> Maybe (RevPath n)) -> AStarSearch n -> AStarSearch n
-withAStarCurrBest f (AStarSearch currBest workQueue) =
-  AStarSearch (f currBest) workQueue
+withAStarCurrBest f (AStarSearch currBest workQueue stats) =
+  AStarSearch (f currBest) workQueue stats
+
+initStats :: AStarStats
+initStats = AStarStats 0 0 0
+
+-- AStarStats
+
+data AStarStats = AStarStats {
+  stopEarlyCount :: Word32,
+  fullPathsCount :: Word32,
+  nodesExpanded  :: Word32
+  }
+  deriving Show
+
+incStopEarlyCount :: AStarState n ()
+incStopEarlyCount = state (\s -> ((), withAStarStats (\(AStarStats sec fp ne) -> AStarStats (sec+1) fp ne) s))
+
+incFullPathsCount :: AStarState n ()
+incFullPathsCount = state (\s -> ((), withAStarStats (\(AStarStats sec fp ne) -> AStarStats sec (fp + 1) ne) s))
+
+incNodesExpandedCount :: Int -> AStarState n ()
+incNodesExpandedCount n = state (\s -> ((), withAStarStats (\(AStarStats sec fp ne) -> AStarStats sec fp (ne + (toEnum n))) s))
+
+withAStarStats :: (AStarStats -> AStarStats) -> AStarSearch n -> AStarSearch n
+withAStarStats f (AStarSearch b pq stats) = AStarSearch b pq (f stats)
 
 {- Volcano -}
 
@@ -309,8 +344,8 @@ headDbg :: String -> [a] -> a
 headDbg msg [] = error msg
 headDbg _   xs = head xs
 
-task1 :: Volcano -> Steam
-task1 volcano = steamSoFar $ headDbg "281" $ astar (legalMoves volcano) (discardFlux volcano) (initFlux volcano)
+task1 :: Volcano -> (Steam, AStarStats)
+task1 volcano = first (steamSoFar . headDbg "281") $ astar (legalMoves volcano) (discardFlux volcano) (initFlux volcano)
 
 initFlux :: Volcano -> Flux
 initFlux volcano = Flux 0 "AA" (Set.filter (\valve -> (valveFlow volcano valve) > 0) $ Map.keysSet $ allValves volcano) 30
@@ -372,5 +407,5 @@ exampleParsed = parse example
 validateExample :: IO ()
 validateExample =
   do
-    test "task1 example" 1651 (task1 exampleParsed)
+    test "task1 example" 1651 (fst $ task1 exampleParsed)
     -- test "task2 example" 56000011 (task2Param 0 20 exampleParsed)
