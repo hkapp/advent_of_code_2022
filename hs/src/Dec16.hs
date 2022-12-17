@@ -1,7 +1,7 @@
 module Dec16 (run) where
 
 import Test(test)
-import Utils(maxBy, parserStrip, splitSubSeq, parserInt, padRight, flatMap)
+import Utils(maxBy, parserStrip, splitSubSeq, parserInt, padRight, flatMap, chunksOf)
 import Utils.State
 import Utils.PQueue(PQueue)
 import qualified Utils.PQueue as PQ
@@ -438,8 +438,8 @@ potential :: Volcano -> Flux -> Steam
 potential volcano flux =
   let
     maxTime = maximum $ fmap timeLeft $ workers flux
-    steamReleased v = (valveFlow volcano v) * (maxTime - 1)
-    allSteamReleased = sum $ map steamReleased $ Set.toList $ closedValves flux
+    -- steamReleased v = (valveFlow volcano v) * (maxTime - 1)
+    -- allSteamReleased = sum $ map steamReleased $ Set.toList $ closedValves flux
 
     -- We can do the following if we sort and do groups of chunked size
     -- rec timeRem (v:ws) =
@@ -448,8 +448,25 @@ potential volcano flux =
         -- timeRemAfter = max (timeRem - 2) 0
       -- in
         -- valveSteam + (w timeRemAfter ws)
+
+    sortedValves = sortOn (\room -> Down $ valveFlow volcano room) (Set.toList $ closedValves flux)
+
+    nworkers = length $ workers flux
+    workingGroups = chunksOf nworkers sortedValves
+
+    -- Walk along the groups, reducing the time left along the way by 2:
+    --  1 to move to the next valve
+    --  1 to open the next valve
+    walk :: [[Room]] -> Minutes -> Steam
+    walk _      timeLeft | timeLeft <= 0 = 0
+    walk []     _         = 0
+    walk (x:xs) timeLeft  = (groupSteam x (timeLeft - 1)) + (walk xs (timeLeft - 2))
+
+    -- For a given group, we assume all workers can release the given valves at the same time
+    groupSteam _  timeOpen | timeOpen <= 0 = 0
+    groupSteam xs timeOpen  = sum $ map (\v -> (valveFlow volcano v) * timeOpen) xs
   in
-    (steamSoFar flux) + allSteamReleased
+    (steamSoFar flux) + (walk workingGroups maxTime)
 
 {- To compute the theoretical maximum, we simply assume that we can
    move to the highest flow valve in one move every time
