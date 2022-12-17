@@ -1,12 +1,13 @@
 module Dec16 (run) where
 
 import Test(test)
-import Utils(maxBy, parserStrip, splitSubSeq, parserInt, padRight)
+import Utils(maxBy, parserStrip, splitSubSeq, parserInt, padRight, flatMap)
 import Utils.State
 import Utils.PQueue(PQueue)
 import qualified Utils.PQueue as PQ
 import Utils.Queue(Queue)
 import qualified Utils.Queue as Queue
+import qualified Utils.Bfs as Bfs
 
 import Data.Bifunctor(first, second)
 import Data.Maybe(fromMaybe)
@@ -18,6 +19,9 @@ import Data.List(sortOn, find)
 import Data.Ord(Down(..))
 import Data.Char(isDigit)
 import Data.Word(Word32)
+import Data.Sequence(Seq)
+import qualified Data.Sequence as Seq
+import qualified Data.Ix as Ix
 
 import System.IO.Unsafe(unsafePerformIO)
 import System.Random(randomIO)
@@ -36,6 +40,8 @@ run input =
     -- AStarStats {stopEarlyCount = 1899600, fullPathsCount = 99, nodesExpanded = 2860962}
     -- After the change in potential computation:
     -- AStarStats {stopEarlyCount = 7508930, fullPathsCount = 99, nodesExpanded = 11353475}
+    -- With smarter actions:
+    -- AStarStats {stopEarlyCount = 100611, fullPathsCount = 68, nodesExpanded = 115596}
     test "task1 (real input)" 2077 res1
 
     putStrLn "Task 2:"
@@ -75,7 +81,40 @@ intoVolcano xs =
     tunnels = Map.fromList $ map (\(r, _, rs) -> (r, rs)) xs
     valves  = Map.fromList $ map (\(r, s, _)  -> (r, s))  xs
   in
-    Volcano tunnels valves
+    Volcano (shortestRoutes tunnels) valves
+
+shortestRoutes :: Map Room [Room] -> Map (Room, Room) Minutes
+shortestRoutes tunnels =
+  -- Make a map out of it
+  Map.fromList $
+    -- run bfs
+    map findShortestPath $
+      -- for each other room
+      flatMap roomPairs $
+        -- for each room
+        Map.keys tunnels
+  where
+    roomPairs :: Room -> [(Room, Room)]
+    roomPairs src =
+      -- turn into pairs
+      map (\dst -> (src, dst)) $
+        -- turn into a list
+        Set.toList $
+          -- remove the current one
+          Set.delete src $
+            -- get all the rooms
+            (Map.keysSet tunnels :: Set Room)
+
+    findShortestPath (src, dst) =
+      -- Bfs.bfs :: (Ord n) => (n -> Bool) -> Graph n -> n -> Maybe [n]
+      let
+        bfsGoal x = x == dst
+        bfsGraph = Bfs.Graph (tunnels !)
+        mbPath = Bfs.bfs bfsGoal bfsGraph src
+        path = (flip fromMaybe) mbPath $ error ("No path found for " ++ src ++ " -> " ++ dst)
+        dist = length path - 1
+      in
+        ((src, dst), dist)
 
 {- AStar -}
 
@@ -222,27 +261,38 @@ withAStarStats f (AStarSearch b pq stats) = AStarSearch b pq (f stats)
 {- Volcano -}
 
 data Volcano = Volcano {
-  tunnelNetwork :: Map Room [Room],
+  -- tunnelNetwork :: Map Room [Room],
+  tunnelRoutes  :: Map (Room, Room) Minutes,
   allValves     :: Map Room Steam
   }
   deriving Show
 
 type Room = String
 
-possibleDestinations :: Volcano -> Room -> [Room]
-possibleDestinations volcano room = (tunnelNetwork volcano) ! room
+-- possibleDestinations :: Volcano -> Room -> [Room]
+-- possibleDestinations volcano room = (tunnelNetwork volcano) ! room
 
 valveFlow :: Volcano -> Room -> Steam
 valveFlow volcano room = (allValves volcano) ! room
+
+timeToMove :: Volcano -> Room -> Room -> Minutes
+timeToMove volcano src dst = (tunnelRoutes volcano) ! (src, dst)
 
 {- Flux -}
 
 {- Actually, partial flux (in construction) -}
 data Flux = Flux {
   steamSoFar   :: Steam,
-  eachPos      :: Serialized Room, -- the current room of each worker
-  closedValves :: Set Room,
-  timeLeft     :: Minutes
+  workers      :: Seq Worker, -- the current room of each worker
+  closedValves :: Set Room
+  }
+  deriving Show
+
+type WIdx = Int
+data Worker = Worker {
+    -- selfIdx  :: WIdx,
+    currPos  :: Room,
+    timeLeft :: Minutes
   }
   deriving Show
 
@@ -261,13 +311,64 @@ instance Ord Flux where
 -- Flux moves
 
 legalMoves :: Volcano -> Flux -> [Flux]
-legalMoves volcano flux =
-  if hasLegalMoves flux
-    then (tunnelMoves volcano flux) ++ (openValveMoves volcano flux)
-    else []
+legalMoves volcano flux = (allWorkerIndexes flux) >>= (workerMoves volcano flux)
+  -- if hasLegalMoves flux -- is this still necessary?
+    -- then (indexes $ eachPos flux) >>= (workerMoves volcano flux)
+    -- else []
+
+allWorkerIndexes :: Flux -> [WIdx]
+allWorkerIndexes flux = Ix.range (0, (length $ workers flux) - 1)
+
+-- If there are no closed valves: Set.toList is []
+-- If there is not enough time to open any additional valve: the last filter returns 0
+workerMoves :: Volcano -> Flux -> WIdx -> [Flux]
+-- workerMoves volcano flux widx = (tunnelMoves volcano flux widx) ++ (openValveMoves volcano flux widx)
+workerMoves volcano flux widx =
+  -- only keep the destinations with positive time
+  filter isFeasible $
+    -- go there and open it
+    map (moveAndOpen volcano flux widx) $
+      -- for each closed valve
+      Set.toList $ closedValves flux
+
+isFeasible :: Flux -> Bool
+isFeasible flux = all (\w -> timeLeft w >= 0) (workers flux)
+
+moveAndOpen :: Volcano -> Flux -> WIdx -> Room -> Flux
+moveAndOpen volcano flux widx target =
+  let
+    worker = getWorker flux widx
+
+    -- move the pos for the given widx
+    newWPos = target
+
+    -- decrease the time for the worker
+    -- Note: decrease by an additional minute to account for opening the valve
+    prevWPos = currPos worker
+    newTime = (timeLeft worker) - (timeToMove volcano prevWPos target) - 1
+
+    -- add steam
+    prevSteam = steamSoFar flux
+    timeValveOpen = newTime
+    newSteam = prevSteam + (timeValveOpen * (valveFlow volcano target))
+
+    -- update the worker
+    newWorker = Worker newWPos newTime
+    newWorkerState = Seq.update widx newWorker (workers flux)
+
+    -- close the valve
+    newValves = Set.delete target (closedValves flux)
+  in
+    Flux newSteam newWorkerState newValves
+
+getWorker :: Flux -> WIdx -> Worker
+getWorker flux = Seq.index (workers flux)
 
 hasLegalMoves :: Flux -> Bool
-hasLegalMoves flux = ((timeLeft flux) > 0) && (hasClosedValves flux)
+hasLegalMoves flux = (anyTimeLeft flux) && (hasClosedValves flux)
+
+anyTimeLeft :: Flux -> Bool
+anyTimeLeft flux = any (\w -> timeLeft w > 0) (workers flux)
 
 noLegalMoves :: Flux -> Bool
 noLegalMoves = not . hasLegalMoves
@@ -275,51 +376,52 @@ noLegalMoves = not . hasLegalMoves
 hasClosedValves :: Flux -> Bool
 hasClosedValves flux = not $ Set.null $ closedValves flux
 
-tunnelMoves :: Volcano -> Flux -> [Flux]
-tunnelMoves volcano flux = moveTo flux <$> possibleDestinations volcano (currWorkerPos flux)
+-- TODO remove
+-- tunnelMoves :: Volcano -> Flux -> WIdx -> [Flux]
+-- tunnelMoves volcano flux widx = moveTo flux widx <$> possibleDestinations volcano (currWorkerPos flux)
 
-currWorkerPos :: Flux -> Room
-currWorkerPos flux = fst $ szPeek $ eachPos flux
+-- currWorkerPos :: Flux -> Room
+-- currWorkerPos flux = fst $ szPeek $ eachPos flux
 
-moveTo :: Flux -> Room -> Flux
-moveTo flux@(Flux steam _ valves time) newWorkerPos =
-  let
-    (newPos, newTime) = moveSpaceAndTime (const newWorkerPos) flux
-  in
-    Flux steam newPos valves newTime
+-- moveTo :: Flux -> Room -> Flux
+-- moveTo flux@(Flux steam _ valves time) newWorkerPos =
+  -- let
+    -- (newPos, newTime) = moveSpaceAndTime (const newWorkerPos) flux
+  -- in
+    -- Flux steam newPos valves newTime
 
-openValveMoves :: Volcano -> Flux -> [Flux]
-openValveMoves volcano flux =
-  if canOpenValve flux
-    then [openValve volcano flux]
-    else []
+-- openValveMoves :: Volcano -> Flux -> [Flux]
+-- openValveMoves volcano flux =
+  -- if canOpenValve flux
+    -- then [openValve volcano flux]
+    -- else []
 
-canOpenValve :: Flux -> Bool
-canOpenValve flux = Set.member (currWorkerPos flux) (closedValves flux)
+-- canOpenValve :: Flux -> Bool
+-- canOpenValve flux = Set.member (currWorkerPos flux) (closedValves flux)
 
-openValve :: Volcano -> Flux -> Flux
-openValve volcano flux@(Flux prevSteam wpos prevValves prevTime) =
-  let
-    pos = currWorkerPos flux
-    newValves = Set.delete pos prevValves
-    timeValveOpen = prevTime - 1
-    newSteam = prevSteam + (timeValveOpen * (valveFlow volcano pos))
-    -- Space doesn't move
-    (newPos, newTime) = moveSpaceAndTime id flux
-  in
-    Flux newSteam newPos newValves newTime
+-- openValve :: Volcano -> Flux -> Flux
+-- openValve volcano flux@(Flux prevSteam wpos prevValves prevTime) =
+  -- let
+    -- pos = currWorkerPos flux
+    -- newValves = Set.delete pos prevValves
+    -- timeValveOpen = prevTime - 1
+    -- newSteam = prevSteam + (timeValveOpen * (valveFlow volcano pos))
+    -- -- Space doesn't move
+    -- (newPos, newTime) = moveSpaceAndTime id flux
+  -- in
+    -- Flux newSteam newPos newValves newTime
 
-moveSpaceAndTime :: (Room -> Room) -> Flux -> (Serialized Room, Minutes)
-moveSpaceAndTime mv flux =
-  let
-    (roundComplete, newPos) = szMove mv (eachPos flux)
-    prevTime = timeLeft flux
-    newTime =
-      if roundComplete
-        then prevTime - 1
-        else prevTime
-  in
-    (newPos, newTime)
+-- moveSpaceAndTime :: (Room -> Room) -> Flux -> (Serialized Room, Minutes)
+-- moveSpaceAndTime mv flux =
+  -- let
+    -- (roundComplete, newPos) = szMove mv (eachPos flux)
+    -- prevTime = timeLeft flux
+    -- newTime =
+      -- if roundComplete
+        -- then prevTime - 1
+        -- else prevTime
+  -- in
+    -- (newPos, newTime)
 
 -- Flux early stop
 
@@ -330,55 +432,74 @@ discardFlux volcano currBest candidate = (potential volcano candidate) <= (steam
 type Stack a = [a]
 data Walk = Move [Room] | Open (Stack Room)
 
+-- A much simpler potential computation: assume that you can open every valve now
+-- TODO improve to improve filtering rate
+potential :: Volcano -> Flux -> Steam
+potential volcano flux =
+  let
+    maxTime = maximum $ fmap timeLeft $ workers flux
+    steamReleased v = (valveFlow volcano v) * (maxTime - 1)
+    allSteamReleased = sum $ map steamReleased $ Set.toList $ closedValves flux
+
+    -- We can do the following if we sort and do groups of chunked size
+    -- rec timeRem (v:ws) =
+      -- let
+        -- valveSteam = (valveFlow volcano v) * (timeRem - 1)
+        -- timeRemAfter = max (timeRem - 2) 0
+      -- in
+        -- valveSteam + (w timeRemAfter ws)
+  in
+    (steamSoFar flux) + allSteamReleased
+
 {- To compute the theoretical maximum, we simply assume that we can
    move to the highest flow valve in one move every time
 -}
-potential :: Volcano -> Flux -> Steam
-potential volcano flux =
-    -- max (startByMoving volcano flux) (startByOpening volcano flux)
-  let
-    workerCount = szCount $ eachPos flux
+-- potential :: Volcano -> Flux -> Steam
+-- potential volcano flux =
+    -- -- max (startByMoving volcano flux) (startByOpening volcano flux)
+  -- let
+    -- workerCount = szCount $ eachPos flux
 
 
-    walk :: [Room] -> Walk -> Flux -> Flux
+    -- walk :: [Room] -> Walk -> Flux -> Flux
 
-    walk [] (Open _) flux = flux
+    -- walk [] (Open _) flux = flux
 
-    walk _ _ flux | noLegalMoves flux = flux
+    -- walk _ _ flux | noLegalMoves flux = flux
 
-    walk (r:rs) (Open opened) flux =
-      if (length opened) < workerCount
-        then walk rs (Open (r:opened)) (openValve volcano flux)
-        else walk (r:rs) (Move $ reverse opened) flux
+    -- walk (r:rs) (Open opened) flux =
+      -- if (length opened) < workerCount
+        -- then walk rs (Open (r:opened)) (openValve volcano flux)
+        -- else walk (r:rs) (Move $ reverse opened) flux
 
-    walk rs (Move []) flux = walk rs (Open []) flux
+    -- walk rs (Move []) flux = walk rs (Open []) flux
 
-    walk rs (Move (m:ms)) flux = walk rs (Move ms) (moveTo flux m)
+    -- walk rs (Move (m:ms)) flux = walk rs (Move ms) (moveTo flux m)
 
 
-    sortedValves = sortOn (\room -> Down $ valveFlow volcano room) (Set.toList $ closedValves flux)
+    -- sortedValves = sortOn (\room -> Down $ valveFlow volcano room) (Set.toList $ closedValves flux)
 
-    startingValves = padRight workerCount someRoom $ take workerCount sortedValves
-    someRoom = currWorkerPos flux
+    -- startingValves = padRight workerCount someRoom $ take workerCount sortedValves
+    -- someRoom = currWorkerPos flux
 
-    maxFlux = walk sortedValves (Open []) $ teleport startingValves flux
-    maxSteam = steamSoFar maxFlux
-  in
-    maxSteam
-    -- if hasLegalMoves flux
-      -- then maxSteam
-      -- else steamSoFar flux
+    -- maxFlux = walk sortedValves (Open []) $ teleport startingValves flux
+    -- maxSteam = steamSoFar maxFlux
+  -- in
+    -- maxSteam
+    -- -- if hasLegalMoves flux
+      -- -- then maxSteam
+      -- -- else steamSoFar flux
 
--- Move each worker to the given room, without updating the time
-teleport :: [Room] -> Flux -> Flux
+-- -- Move each worker to the given room, without updating the time
+-- teleport :: [Room] -> Flux -> Flux
 
-teleport (r:rs) (Flux steam wpos valves time) =
-  let
-    (_, newPos) = szMove (const r) wpos
-  in
-    teleport rs (Flux steam newPos valves time)
+-- teleport (r:rs) (Flux steam wpos valves time) =
+  -- let
+    -- (_, newPos) = szMove (const r) wpos
+  -- in
+    -- teleport rs (Flux steam newPos valves time)
 
-teleport [] flux = flux
+-- teleport [] flux = flux
 
 -- More precise approximation, but doesn't generalize easily to more than one worker:
 {-
@@ -438,9 +559,9 @@ task1 :: Volcano -> (Steam, AStarStats)
 task1 = searchVolcano initSoloFlux
 
 initFlux :: Int -> Minutes -> Volcano -> Flux
-initFlux nWorkers totTime volcano = Flux 0 sz valves totTime
+initFlux nWorkers totTime volcano = Flux 0 workers valves
   where
-    sz = serialize (take nWorkers $ repeat "AA")
+    workers = Seq.fromList $ take nWorkers $ repeat $ Worker "AA" totTime
     valves = Set.filter (\valve -> (valveFlow volcano valve) > 0) $ Map.keysSet $ allValves volcano
 
 initSoloFlux :: Volcano -> Flux

@@ -4,6 +4,7 @@ import Test(test)
 import Utils(ascii, arrayFromNestedList, withinBounds, findIndexesWhere, flattenMaybe, repeatUntil)
 import Utils.Queue(Queue)
 import qualified Utils.Queue as Queue
+import Utils.Bfs(Graph(..), bfs)
 
 import Data.Array.IArray(Array, (!))
 import qualified Data.Array.IArray as Array
@@ -61,49 +62,6 @@ findEndPos = findCharPos 'E'
 
 findCharPos :: Char -> Array Pos Char -> Pos
 findCharPos c = head . findIndexesWhere ((==) c)
-
-{- Graph -}
-
-newtype Graph n = Graph (n -> [n])
-
-neighbours :: Graph n -> n -> [n]
-neighbours (Graph neigh) = neigh
-
-bfs :: (Ord n) => (n -> Bool) -> Graph n -> n -> Maybe [n]
-bfs isGoal graph startNode = fmap reverse $ bfsSearch isGoal graph startNode
-
-type BFS n = (Queue [n], Set n)
-
-visit :: (Ord n) => (n -> Bool) -> Graph n -> State (BFS n) (Maybe [n])
-visit isGoal graph =
-  do
-    (queue, visited) <- get
-    let (currPath, remainingQueue) = Queue.pop queue
-    let currNode = head currPath
-    if Set.member currNode visited
-      then
-        do
-          put (remainingQueue, visited)
-          return Nothing
-      else
-        if isGoal currNode
-          then return $ Just currPath
-          else
-            do
-              let extendedPaths = neighbours graph currNode <&> (\newNode -> newNode:currPath)
-              let newQueue = Queue.pushAll remainingQueue extendedPaths
-              let newVisited = Set.insert currNode visited
-              put (newQueue, newVisited)
-              return Nothing
-
-bfsSearch :: (Ord n) => (n -> Bool) -> Graph n -> n -> Maybe [n]
-bfsSearch isGoal graph startNode =
-  (flip evalState) initBFS $ repeatUntil stopCondition (visit isGoal graph)
-  where
-    stopCondition (Just path,  _) = True
-    stopCondition (_ , (remQ, _)) = Queue.null remQ
-
-    initBFS = (Queue.singleton [startNode], Set.empty)
 
 {- Task 1 -}
 

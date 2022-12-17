@@ -185,3 +185,6 @@ maxBy f x y =
 padRight :: Int -> a -> [a] -> [a]
 padRight minLength _ xs | length xs >= minLength = xs
 padRight minLength y xs = xs ++ (take (minLength - length xs) (repeat y))
+
+flatMap :: (a -> [b]) -> [a] -> [b]
+flatMap = (=<<)
