@@ -42,6 +42,10 @@ run input =
     -- AStarStats {stopEarlyCount = 7508930, fullPathsCount = 99, nodesExpanded = 11353475}
     -- With smarter actions:
     -- AStarStats {stopEarlyCount = 100611, fullPathsCount = 68, nodesExpanded = 115596}
+    -- With smarter potential calculation:
+    -- AStarStats {stopEarlyCount = 9625, fullPathsCount = 5, nodesExpanded = 10596}
+    -- With even smarter potential calculation: (taking into account the distances between the remaining rooms)
+    -- AStarStats {stopEarlyCount = 3047, fullPathsCount = 5, nodesExpanded = 3355}
     test "task1 (real input)" 2077 res1
 
     putStrLn "Task 2:"
@@ -90,21 +94,8 @@ shortestRoutes tunnels =
     -- run bfs
     map findShortestPath $
       -- for each other room
-      flatMap roomPairs $
-        -- for each room
-        Map.keys tunnels
+      allRoomPairs $ Map.keysSet tunnels
   where
-    roomPairs :: Room -> [(Room, Room)]
-    roomPairs src =
-      -- turn into pairs
-      map (\dst -> (src, dst)) $
-        -- turn into a list
-        Set.toList $
-          -- remove the current one
-          Set.delete src $
-            -- get all the rooms
-            (Map.keysSet tunnels :: Set Room)
-
     findShortestPath (src, dst) =
       -- Bfs.bfs :: (Ord n) => (n -> Bool) -> Graph n -> n -> Maybe [n]
       let
@@ -115,6 +106,25 @@ shortestRoutes tunnels =
         dist = length path - 1
       in
         ((src, dst), dist)
+
+{- Don't generate duplicate in pairs -}
+allRoomPairs :: Set Room -> [(Room, Room)]
+allRoomPairs roomSet =
+  -- for each other room
+  flatMap roomPairs $
+    -- for each room
+    Set.toList roomSet
+  where
+    roomPairs :: Room -> [(Room, Room)]
+    roomPairs src =
+      -- turn into pairs
+      map (\dst -> (src, dst)) $
+        -- turn into a list
+        Set.toList $
+          -- remove the current one
+          Set.delete src $
+            -- get all the rooms
+            roomSet
 
 {- AStar -}
 
@@ -179,15 +189,22 @@ debugPrint :: String -> a -> a
 debugPrint msg x = unsafePerformIO $ putStrLn msg >>= (const $ return x)
 
 -- TODO remove
-maybePrintStats :: AStarState n ()
+maybePrintStats :: (Show n) => AStarState n ()
 maybePrintStats =
   do
     stats <- gets astarStats
+    currBest <- gets astarCurrBest
     unsafePerformIO $
       do
         x <- (randomIO :: IO Word32)
         if (x `mod` 1000000) == 0
-          then print stats >>= (const $ return (return ()))
+          then
+            do
+              print stats
+              case currBest of
+                Just path -> print $ head path
+                Nothing   -> return ()
+              return (return ())
           else return (return ())
 
 getBestPath :: AStarState n (Maybe (RevPath n))
@@ -432,12 +449,28 @@ discardFlux volcano currBest candidate = (potential volcano candidate) <= (steam
 type Stack a = [a]
 data Walk = Move [Room] | Open (Stack Room)
 
--- A much simpler potential computation: assume that you can open every valve now
--- TODO improve to improve filtering rate
+{- We compute the potential by assuming the following:
+   - each worker is currently present at one of the highest flow valves
+     - each worker is at a different one
+   - each worker can move as fast as possible to the next highest flow valve
+     - "as fast as possible" currently means "the fastest possible time to get between any two remaining rooms"
+-}
 potential :: Volcano -> Flux -> Steam
 potential volcano flux =
   let
     maxTime = maximum $ fmap timeLeft $ workers flux
+
+    -- Find the minimum time it takes to get to/from any pair of remaining valves
+    fastestMove =
+      -- compute the minimum
+      minimum $
+        -- get the distance from a to b
+        map getDistance $
+          -- get each valve pair (distinct)
+          allRoomPairs $ closedValves flux
+
+    getDistance pair = (tunnelRoutes volcano) ! pair
+
     -- steamReleased v = (valveFlow volcano v) * (maxTime - 1)
     -- allSteamReleased = sum $ map steamReleased $ Set.toList $ closedValves flux
 
@@ -458,9 +491,9 @@ potential volcano flux =
     --  1 to move to the next valve
     --  1 to open the next valve
     walk :: [[Room]] -> Minutes -> Steam
-    walk _      timeLeft | timeLeft <= 0 = 0
     walk []     _         = 0
-    walk (x:xs) timeLeft  = (groupSteam x (timeLeft - 1)) + (walk xs (timeLeft - 2))
+    walk _      timeLeft | timeLeft <= 0 = 0
+    walk (x:xs) timeLeft  = (groupSteam x (timeLeft - 1)) + (walk xs (timeLeft - fastestMove - 1))
 
     -- For a given group, we assume all workers can release the given valves at the same time
     groupSteam _  timeOpen | timeOpen <= 0 = 0
