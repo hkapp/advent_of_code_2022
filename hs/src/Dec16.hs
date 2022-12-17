@@ -78,7 +78,12 @@ intoVolcano xs =
 {- AStar -}
 
 type AStarState n a = State (AStarSearch n) a
-type AStarSearch n = (Maybe (RevPath n), AStarQueue n)
+
+data AStarSearch n = AStarSearch {
+  astarCurrBest  :: Maybe (RevPath n),
+  astarWorkQueue :: AStarQueue n
+  }
+
 type AStarQueue n = PQueue n (RevPath n)
 
 type RevPath n = [n]
@@ -116,16 +121,16 @@ astar expandFrom stopEarly start =
                   return $ fromMaybe [] bestPath
 
     -- stopCriteria :: (RevPath n, AStarSearch n) -> Bool
-    stopCriteria (_, (_, pq)) = PQ.null pq
+    stopCriteria (_, s) = PQ.null $ astarWorkQueue s
 
     -- initState :: AStarSearch n
-    initState = (Nothing, PQ.singleton start [start])
+    initState = AStarSearch Nothing (PQ.singleton start [start])
 
 debugPrint :: String -> a -> a
 debugPrint msg x = unsafePerformIO $ putStrLn msg >>= (const $ return x)
 
 getBestPath :: AStarState n (Maybe (RevPath n))
-getBestPath = gets fst
+getBestPath = gets astarCurrBest
 
 popNextNode :: (Ord n) => AStarState n (RevPath n)
 popNextNode = fmap snd $ modPQ PQ.popMax
@@ -142,10 +147,13 @@ pushNodes ns = modPQ f
 modPQ :: (AStarQueue n -> (a, AStarQueue n)) -> AStarState n a
 modPQ f =
   do
-    (b, pq) <- get
-    let (x, pq') = f pq
-    put (b, pq')
+    s <- get
+    let (x, pq') = f (astarWorkQueue s)
+    put $ withAStarQueue (const pq') s
     return x
+
+withAStarQueue :: (AStarQueue n -> AStarQueue n) -> AStarSearch n -> AStarSearch n
+withAStarQueue f (AStarSearch currBest pq) = AStarSearch currBest (f pq)
 
 considerForBestPath :: (Ord n) => RevPath n -> AStarState n (RevPath n)
 considerForBestPath path = modBestPath pickBest
@@ -156,10 +164,14 @@ considerForBestPath path = modBestPath pickBest
 modBestPath :: (Maybe (RevPath n) -> RevPath n) -> AStarState n (RevPath n)
 modBestPath f =
   do
-    (b, pq) <- get
-    let b' = f b
-    put (Just b', pq)
-    return b'
+    s <- get
+    let b' = f $ astarCurrBest s
+    put $ withAStarCurrBest (const $ Just b') s
+    return $ b'
+
+withAStarCurrBest :: (Maybe (RevPath n) -> Maybe (RevPath n)) -> AStarSearch n -> AStarSearch n
+withAStarCurrBest f (AStarSearch currBest workQueue) =
+  AStarSearch (f currBest) workQueue
 
 {- Volcano -}
 
