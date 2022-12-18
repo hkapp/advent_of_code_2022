@@ -52,7 +52,7 @@ run input =
     let (res2, stats2) = task2 parsed
     print res2
     print stats2
-    -- testRun "task2" Nothing (task2 parsed)
+    test "task2 (real input)" 2741 res2
 
 {- Parsing -}
 
