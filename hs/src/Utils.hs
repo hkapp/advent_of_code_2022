@@ -6,7 +6,7 @@ import Data.Array.IArray(Array, array)
 import qualified Data.Array.IArray as Array
 import qualified Data.Char
 import Data.Char(isDigit)
-import Data.List(unfoldr, sort, sortOn, groupBy)
+import Data.List(unfoldr, sort, sortOn, groupBy, intersperse)
 import Data.Ord(Down(..))
 import qualified Data.Ix
 import Data.Maybe(maybeToList)
@@ -188,3 +188,6 @@ padRight minLength y xs = xs ++ (take (minLength - length xs) (repeat y))
 
 flatMap :: (a -> [b]) -> [a] -> [b]
 flatMap = (=<<)
+
+joinSep :: String -> [String] -> String
+joinSep sep = flatten . intersperse sep

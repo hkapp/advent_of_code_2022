@@ -4,6 +4,7 @@ import Prelude hiding (Left, Right)
 
 import Test(test)
 import Utils.State
+import Utils.Ring(Ring)
 import qualified Utils.Ring as Ring
 
 import Data.Set(Set)
@@ -47,13 +48,48 @@ hPos = fst
 vPos :: Pos -> Coord
 vPos = snd
 
+move :: HDir -> Pos -> Pos
+move Left  (x, y) = (x-1, y)
+move Right (x, y) = (x+1, y)
+
+moveDown :: Pos -> Pos
+moveDown (x, y) = (x, y-1)
+
+newPosHV :: Coord -> Coord -> Pos
+newPosHV h v = (h, v)
+
+-- Implements a translation that moves the origin (0, 0) to the first Pos argument
+moveToPos :: Pos -> Pos -> Pos
+moveToPos (x0, y0) (x1, y1) = (x0 + x1, y0 + y1)
+
 {- Tetris -}
 
-type Tetris = ()
--- type Shape
-type Piece = ()
+data Tetris = Tetris {
+    rockPositions  :: Set Pos,
+    gasRotation    :: Ring Gas,
+    shapeGenerator :: Ring Shape
+  }
+  deriving Show
+
+data Shape = ShapeHBar | ShapePlus | ShapeRevL | ShapeVBar | ShapeBox
+  deriving Show
+
+type Piece = [Pos]
+
 type Gas = HDir
+
 data HDir = Left | Right
+  deriving Show
+
+-- This is a constant
+-- The returned value is still considered within range
+leftEdgeOf :: Tetris -> Coord
+leftEdgeOf _ = 0
+
+-- This is a constant
+-- The returned value is still considered within range
+rightEdgeOf :: Tetris -> Coord
+rightEdgeOf _ = 6
 
 -- Tetris: gasPush
 
@@ -97,11 +133,20 @@ fall tetris piece =
     then Nothing
     else Just $ fallNoCheck piece
 
+-- TODO cover the case where there is no floor
 resting :: Tetris -> Piece -> Bool
 resting tetris piece = any (pointResting tetris) piece
 
 pointResting :: Tetris -> Pos -> Bool
-pointResting tetris pos = hasRockAt tetris (moveDown pos)
+pointResting tetris pos =
+  let
+    restingOnFloor = (vPos pos) == 0
+    restingOnRock  = hasRockAt tetris (moveDown pos)
+  in
+    restingOnFloor || restingOnRock
+
+hasRockAt :: Tetris -> Pos -> Bool
+hasRockAt tetris pos = Set.member pos (rockPositions tetris)
 
 fallNoCheck :: Piece -> Piece
 fallNoCheck = map moveDown
@@ -116,7 +161,7 @@ startingPos tetris =
     -- Each rock appears so that its left edge is two units away from the left wall
     leftEdge = 2
     -- [...] and its bottom edge is three units above the highest rock in the room
-    rightEdge = 3 + highestRock tetris
+    bottomEdge = 3 + highestRock tetris
   in
     newPosHV leftEdge bottomEdge
 
@@ -127,9 +172,45 @@ startingPos tetris =
 --      and then even use lookupMin/Max
 highestRock :: Tetris -> Coord
 highestRock tetris =
-  case Set.toList (stableRocks tetris) of
+  case Set.toList (rockPositions tetris) of
     [] -> 0
     xs -> maximum $ map vPos xs
+
+-- Tetris: new piece materialization
+
+newPiece :: Shape -> Pos -> Piece
+newPiece shape pos = map (moveToPos pos) $ newPieceAtOrigin shape
+
+-- The bottom-left corner of that shape is at the origin (0, 0)
+newPieceAtOrigin :: Shape -> Piece
+--          y
+--    ####  0
+-- x: 0123
+newPieceAtOrigin ShapeHBar = [(0, 0), (1, 0), (2, 0), (3, 0)]
+--         y
+--    .#.  2
+--    ###  1
+--    .#.  0
+-- x: 012
+newPieceAtOrigin ShapePlus = [(1, 0), (0, 1), (1, 1), (2, 1), (1, 2)]
+--         y
+--    ..#  2
+--    ..#  1
+--    ###  0
+-- x: 012
+newPieceAtOrigin ShapeRevL = [(0, 0), (1, 0), (2, 0), (2, 1), (2, 2)]
+--         y
+--    #  3
+--    #  2
+--    #  1
+--    #  0
+-- x: 0
+newPieceAtOrigin ShapeVBar = [(0, 0), (0, 1), (0, 2), (0, 3)]
+--        y
+--    ##  1
+--    ##  0
+-- x: 01
+newPieceAtOrigin ShapeBox = [(0, 0), (1, 0), (0, 1), (1, 1)]
 
 -- Tetris: State
 
@@ -144,18 +225,34 @@ data Round = Round {
 applyGas :: State Round ()
 applyGas =
   do
+    gas       <- nextGas
     tetris    <- gets tetrisRound
     currPiece <- gets pieceRound
-    gas       <- nextGas tetrisRound
     putPiece $ gasPush tetris gas currPiece
+
+putPiece :: Piece -> State Round ()
+putPiece p =
+  do
+    round <- get
+    let newRound = round { pieceRound = p }
+    put newRound
 
 nextGas :: State Round Gas
 nextGas =
   do
     tetris <- gets tetrisRound
-    (gas, newGasSeq) <- Ring.next $ gasRotation tetris
+    let (gas, newGasSeq) = Ring.next $ gasRotation tetris
     putGasRotation newGasSeq
     return gas
+
+putGasRotation :: Ring Gas -> State Round ()
+putGasRotation newGasRotation =
+  do
+    prevRound <- get
+    let prevTetris = tetrisRound prevRound
+    let newTetris = prevTetris { gasRotation = newGasRotation }
+    let newRound = prevRound { tetrisRound = newTetris }
+    put newRound
 
 applyFall :: State Round Outcome
 applyFall =
@@ -194,9 +291,17 @@ oneRound =
     resetGas
     startingPiece <- generatePiece
     tetris        <- get
-    let round = execState fallAllTheWay (tetris, startingPiece)
+    let round = execState fallAllTheWay (Round tetris startingPiece)
     put $ tetrisRound round
     freezePiece $ pieceRound round
+
+resetGas :: State Tetris ()
+resetGas =
+  do
+    tetris <- get
+    let newGasRotation = Ring.reset (gasRotation tetris)
+    let newTetris = tetris { gasRotation = newGasRotation }
+    put newTetris
 
 generatePiece :: State Tetris Piece
 generatePiece =
@@ -206,12 +311,23 @@ generatePiece =
     shape   <- nextShape
     return $ newPiece shape pos
 
+nextShape :: State Tetris Shape
+nextShape =
+  do
+    tetris <- get
+    let (shape, newGen) = Ring.next (shapeGenerator tetris)
+    put $ tetris { shapeGenerator = newGen }
+    return shape
+
 freezePiece :: Piece -> State Tetris ()
 freezePiece piece =
   do
     tetris <- get
     let insertPiecePositions prevSet = Set.union prevSet (Set.fromList piece)
     put $ withRockPositions insertPiecePositions tetris
+
+withRockPositions :: (Set Pos -> Set Pos) -> Tetris -> Tetris
+withRockPositions f tetris = tetris { rockPositions = f (rockPositions tetris) }
 
 {- Task 1 -}
 
