@@ -1,11 +1,20 @@
-module Utils.Ring where
+module Utils.Ring (
+  Ring,
+  armPos,
+  next,
+  reset,
+  fromList
+) where
 
 import Utils(joinSep, arrayFromList)
 
 import Data.Array.IArray(Array, (!))
 import qualified Data.Array.IArray as Array
 
-data Ring a = Ring Int (Array Int a)
+data Ring a = Ring {
+  armPos :: Int,
+  buffer :: (Array Int a)
+  }
 
 next :: Ring a -> (a, Ring a)
 next (Ring armPos buffer) =

@@ -12,6 +12,8 @@ import Data.Set(Set)
 import qualified Data.Set as Set
 import Data.Int(Int64)
 import Data.List(genericTake)
+import Data.Map(Map)
+import qualified Data.Map as Map
 
 import System.IO.Unsafe(unsafePerformIO)
 
@@ -414,10 +416,14 @@ reduceTetris tetris =
     lowestFreeSpot = minimum $ map vPos $ Set.toList reachableEmptySpots
     tideMark = lowestFreeSpot - 1
 
-    reducedRocks = Set.filter (\r -> vPos r >= tideMark) currRocks
+    reducedRocks_ = Set.filter (\r -> vPos r >= tideMark) currRocks
+    reducedRocks =
+      if (maximum $ map vPos $ Set.toList reducedRocks_) <= (tideMark + 1)
+        then awfulPrint (Set.map (moveToPos (newPosHV 0 (-tideMark))) reducedRocks_) reducedRocks_
+        else reducedRocks_
   in
     if length currRocks > threshold
-      then tetris { rockPositions = (awfulPrint ((maximum $ map vPos $ Set.toList reducedRocks) - tideMark, length reducedRocks) reducedRocks) }
+      then tetris { rockPositions = reducedRocks }
       else tetris
 
 awfulPrint :: (Show a) => a -> b -> b
@@ -427,6 +433,127 @@ awfulPrint x y = unsafePerformIO (print x >>= (const (return y)))
 --   this is prime
 task2 :: Ring Gas -> Coord
 task2 = task1Param 1000000
+
+data Archive = Archive {
+  archiveEnabled    :: Bool,
+  archiveRecords    :: Map Key Record,
+  archiveCurrTetris :: Tetris,
+  archiveTime       :: Int64
+  }
+
+{- We loop if the last couple of rows are the same AND the gas ring state is the same -}
+type ArmPos = Int
+type Key = (Set Pos, ArmPos)
+
+data Record = Record {
+  recordTetris :: Tetris,
+  -- recordHeight :: Coord,
+  recordTime   :: Time
+  }
+
+type Time = Int64
+
+findRecurrenceTime :: Ring Gas -> Recurrence
+findRecurrenceTime gasRotation = evalState (repeatUntilIsJust tryOneRecurrence) (initArchive gasRotation)
+
+initArchive :: Ring Gas -> Archive
+initArchive gas = Archive False Map.empty (newTetris gas) 0
+
+tryOneRecurrence :: State Archive (Maybe Recurrence)
+tryOneRecurrence =
+  do
+    tetris0 <- gets archiveCurrTetris
+    let tetris1 = execState oneRound tetris0
+    putArchiveCurrTetris tetris1
+    enabled <- tryEnableArchive
+    if enabled && recurrenceCandidate tetris1
+      then checkRecurrence
+      else return Nothing
+    -- TODO update time
+
+putArchiveCurrTetris :: Tetris -> State Archive ()
+putArchiveCurrTetris tetris =
+  do
+    archive <- get
+    put $ archive { archiveCurrTetris = tetris }
+
+recurrenceCandidate :: Tetris -> Bool
+recurrenceCandidate tetris =
+  let
+    sizeThreshold = 14 -- equivalent to two full rows
+    size = length $ rockPositions tetris
+  in
+    size <= sizeThreshold
+
+-- TODO remove the current height when inserting into the map
+tryEnableArchive :: State Archive Bool
+tryEnableArchive =
+  do
+    alreadyEnabled <- gets archiveEnabled
+    if alreadyEnabled
+      then return True
+      else
+        do
+          tetris <- gets archiveCurrTetris
+          let nowEnabled = recurrenceCandidate tetris
+          if nowEnabled
+            then
+              do
+                archive <- get
+                put $ archive { archiveEnabled = True }
+                return True
+            else return False
+
+data Recurrence = Recurrence {
+  sdflk :: ()
+  }
+
+-- Here we assume that we are enabled and that the current tetris is a valid candidate
+checkRecurrence :: State Archive (Maybe Recurrence)
+checkRecurrence =
+  do
+    currKey <- buildCurrKey
+    records <- gets archiveRecords
+    if Map.member currKey records
+      then fmap Just buildRecurrence
+      else
+        do
+          updateFailedRecurrence
+          return Nothing
+
+buildRecurrence :: State Archive Recurrence
+buildRecurrence = return $ Recurrence ()
+
+buildCurrKey :: State Archive Key
+buildCurrKey =
+  do
+    tetris <- gets archiveCurrTetris
+    let rocks = heightInsensitive $ rockPositions tetris
+    let armPos = Ring.armPos $ gasRotation tetris
+    return (rocks, armPos)
+
+heightInsensitive :: Set Pos -> Set Pos
+heightInsensitive heightRocks =
+  let
+    newFloor = minimum $ map vPos $ Set.toList heightRocks
+    removeHeight = moveToPos (newPosHV 0 (-newFloor))
+  in
+    Set.map removeHeight heightRocks
+
+updateFailedRecurrence :: State Archive ()
+updateFailedRecurrence =
+  do
+    newRecord <- buildRecord
+    key       <- buildCurrKey
+    archive   <- get
+    put $ archive { archiveRecords = Map.insert key newRecord (archiveRecords archive) }
+
+buildRecord :: State Archive Record
+buildRecord =
+  do
+    currTetris <- gets archiveCurrTetris
+    currTime <- gets archiveTime
+    return $ Record currTetris currTime
 
 {- Unit Test -}
 
@@ -447,8 +574,7 @@ validateExample :: IO ()
 validateExample =
   do
     test "task1 example" 3068 (task1 exampleParsed)
-    -- putStrLn "task2 example"
-    -- test "task2 example" 1707 (fst $ task2 exampleParsed)
+    test "task2 example" 1514285714288 (task2 exampleParsed)
 
 showTetris :: Tetris -> String
 showTetris tetris =

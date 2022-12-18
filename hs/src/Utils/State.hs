@@ -15,6 +15,8 @@ module Utils.State(
 
 import Control.Monad.State(State, evalState, get, state, runState, execState, gets, put)
 
+import Data.Maybe(isJust, fromJust)
+
 evalStarting :: State a [a] -> a -> [a]
 evalStarting st x = x:(evalState st x)
 
@@ -26,6 +28,9 @@ repeatUntil cond st =
     if cond (x, s)
       then return x
       else repeatUntil cond st
+
+repeatUntilIsJust :: State s (Maybe a) -> State s a
+repeatUntilIsJust = fmap fromJust . repeatUntil (\(a, _) -> isJust a)
 
 countUntil :: ((a, s) -> Bool) -> State s a -> State s Int
 countUntil pred st = countStarting 0
