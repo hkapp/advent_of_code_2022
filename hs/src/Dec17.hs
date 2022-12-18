@@ -2,7 +2,7 @@ module Dec17 (run) where
 
 import Prelude hiding (Left, Right)
 
-import Test(test)
+import Test(test, testFmtStr)
 import Utils.State
 import Utils.Ring(Ring)
 import qualified Utils.Ring as Ring
@@ -19,7 +19,7 @@ run input =
     putStrLn "Task 1:"
     let res1 = task1 parsed
     print res1
-    -- test "task1 (real input)" 2077 res1
+    test "task1 (real input)" 3186 res1
 
     putStrLn "Task 2:"
     let res2 = task2 parsed
@@ -40,11 +40,15 @@ parseDir '<' = Left
 type Coord = Int
 type Pos = (Coord, Coord)
 
-{- ^
-   |
-   y
-   |
-   0 --x-->
+{- ^            |..@@@@.| 4
+   |            |.......| 3
+   y            |.......| 2
+   |            |.......| 1
+   0 --x-->     +-------+ 0
+                 0123456
+
+  The floor is at y=0
+  Any stable rock must have y>=1
 -}
 
 hPos :: Pos -> Coord
@@ -96,18 +100,29 @@ leftEdgeOf _ = 0
 rightEdgeOf :: Tetris -> Coord
 rightEdgeOf _ = 6
 
+newTetris :: Ring Gas -> Tetris
+newTetris gasRing = Tetris newRocks gasRing shapes
+  where
+    newRocks = Set.empty
+    shapes = Ring.fromList [ShapeHBar, ShapePlus, ShapeRevL, ShapeVBar, ShapeBox]
+
 -- Tetris: gasPush
 
--- Do nothing if it touches the sides
+-- Do nothing if it touches the sides OR another rock
 gasPush :: Tetris -> HDir -> Piece -> Piece
 gasPush tetris dir origPiece =
   let
     newUnchecked = pushNoCheck dir origPiece
     exceedsBounds = pieceExceedsBounds tetris dir newUnchecked
+    blockedByRocks = superposition tetris dir newUnchecked
   in
-    if exceedsBounds
+    if exceedsBounds || blockedByRocks
       then origPiece
       else newUnchecked
+
+superposition :: Tetris -> HDir -> Piece -> Bool
+superposition tetris _ piece =
+  any (hasRockAt tetris) piece
 
 pushNoCheck :: HDir -> Piece -> Piece
 pushNoCheck dir = map (move dir)
@@ -144,8 +159,9 @@ resting tetris piece = any (pointResting tetris) piece
 pointResting :: Tetris -> Pos -> Bool
 pointResting tetris pos =
   let
-    restingOnFloor = (vPos pos) == 0
-    restingOnRock  = hasRockAt tetris (moveDown pos)
+    posBelow = moveDown pos
+    restingOnFloor = (vPos posBelow) == 0
+    restingOnRock  = hasRockAt tetris posBelow
   in
     restingOnFloor || restingOnRock
 
@@ -165,7 +181,8 @@ startingPos tetris =
     -- Each rock appears so that its left edge is two units away from the left wall
     leftEdge = 2
     -- [...] and its bottom edge is three units above the highest rock in the room
-    bottomEdge = 3 + highestRock tetris
+    -- Note: we actually need an extra 1
+    bottomEdge = 1 + 3 + highestRock tetris
   in
     newPosHV leftEdge bottomEdge
 
@@ -336,17 +353,30 @@ withRockPositions f tetris = tetris { rockPositions = f (rockPositions tetris) }
 
 {- Task 1 -}
 
-task1 = id
+doNRounds :: Int -> State Tetris ()
+doNRounds n = sequence_ $ take n $ repeat oneRound
+
+stopAfterNRounds :: Int -> Ring Gas -> Tetris
+stopAfterNRounds nrounds input = execState (doNRounds nrounds) (newTetris input)
+
+task1 :: Ring Gas -> Int
+task1 = task1Param 2022
+
+task1Param :: Int -> Ring Gas -> Int
+task1Param n = highestRock . stopAfterNRounds n
 
 {- Task 2 -}
 
-task2 = id
+task2 = const "not implemented"
 
 {- Unit Test -}
 
 unitTest :: IO ()
 unitTest =
   do
+    debug1
+    debug2
+    debug3
     validateExample
 
 example = ">>><<><>><<<>><>>><<<>>><<<><<<>><>><<>>"
@@ -354,8 +384,97 @@ example = ">>><<><>><<<>><>>><<<>>><<<><<<>><>><<>>"
 exampleParsed = parse example
 
 validateExample :: IO ()
-validateExample = return ()
-  -- do
-    -- test "task1 example" 1651 (fst $ task1 exampleParsed)
+validateExample =
+  do
+    test "task1 example" 3068 (task1 exampleParsed)
     -- putStrLn "task2 example"
     -- test "task2 example" 1707 (fst $ task2 exampleParsed)
+
+showTetris :: Tetris -> String
+showTetris tetris =
+  let
+    rowIndexes = reverse $ [1..(highestRock tetris)]
+    colIndexes = [(leftEdgeOf tetris)..(rightEdgeOf tetris)]
+    rocks = rockPositions tetris
+
+    showPos pos =
+      case Set.member pos rocks of
+        True  -> '#'
+        False -> '.'
+
+    showTetrisRow ridx = map (\cidx -> showPos (newPosHV cidx ridx)) colIndexes
+
+    strRows = map showTetrisRow rowIndexes
+  in
+    unlines strRows
+
+debug1 :: IO ()
+debug1 =
+  do
+    let pc0 = [(2, 4), (3, 4), (4, 4), (5, 4)]
+    test "example: init piece" pc0 (newPiece ShapeHBar (2, 4))
+    let tetris0 = newTetris exampleParsed
+    test "starting pos" (2, 4) (startingPos tetris0)
+    testFmtStr "task1 example (1 rounds)" "..####.\n" (showTetris $ stopAfterNRounds 1 exampleParsed)
+    test "task1 example (1 rounds)" 1 (task1Param 1 exampleParsed)
+
+debug2 :: IO ()
+debug2 =
+  do
+    rnd 2 4
+    rnd 3 6
+    rnd 4 7
+    rnd 5 9
+
+    rsn 5 $ unlines [
+      "....##.",
+      "....##.",
+      "....#..",
+      "..#.#..",
+      "..#.#..",
+      "#####..",
+      "..###..",
+      "...#...",
+      "..####."
+      ]
+  where
+    rnd n expected = test (msg n) expected (task1Param n exampleParsed)
+
+    rsn n expected = testFmtStr (msg n) expected (showTetris $ stopAfterNRounds n exampleParsed)
+
+    msg n = "task1 example (" ++ (show n) ++ " rounds)"
+
+debug3 :: IO ()
+debug3 =
+  do
+    rnd 6 10
+    rnd 7 13
+    rnd 8 15
+    rnd 9 17
+    rnd 10 17
+
+    rsn 10 $ unlines [
+      "....#..",
+      "....#..",
+      "....##.",
+      "##..##.",
+      "######.",
+      ".###...",
+      "..#....",
+      ".####..",
+      "....##.",
+      "....##.",
+      "....#..",
+      "..#.#..",
+      "..#.#..",
+      "#####..",
+      "..###..",
+      "...#...",
+      "..####."
+      ]
+  where
+    rnd n expected = test (msg n) expected (task1Param n exampleParsed)
+
+    rsn n expected = testFmtStr (msg n) expected (showTetris $ stopAfterNRounds n exampleParsed)
+
+    msg n = "task1 example (" ++ (show n) ++ " rounds)"
