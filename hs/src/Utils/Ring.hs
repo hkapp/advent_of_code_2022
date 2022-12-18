@@ -1,6 +1,6 @@
 module Utils.Ring where
 
-import Utils(joinSep)
+import Utils(joinSep, arrayFromList)
 
 import Data.Array.IArray(Array, (!))
 import qualified Data.Array.IArray as Array
@@ -18,6 +18,9 @@ next (Ring armPos buffer) =
 
 reset :: Ring a -> Ring a
 reset (Ring armPos buffer) = Ring 0 buffer
+
+fromList :: [a] -> Ring a
+fromList = Ring 0 . arrayFromList
 
 instance Show a => Show (Ring a) where
   show (Ring armPos buffer) =

@@ -28,7 +28,12 @@ run input =
 
 {- Parsing -}
 
-parse = id
+parse :: String -> Ring Gas
+parse = Ring.fromList . map parseDir . filter ((/=) '\n')
+
+parseDir :: Char -> HDir
+parseDir '>' = Right
+parseDir '<' = Left
 
 {- Coordinate system -}
 
@@ -133,7 +138,6 @@ fall tetris piece =
     then Nothing
     else Just $ fallNoCheck piece
 
--- TODO cover the case where there is no floor
 resting :: Tetris -> Piece -> Bool
 resting tetris piece = any (pointResting tetris) piece
 
@@ -284,24 +288,25 @@ fallAllTheWay = fmap (const ()) $ repeatUntil stopCond roundStep
 -- Generate a new piece
 -- Run the round, i.e. until the piece stops
 -- Update the Tetris with the new piece position
--- TODO reset the gas
 oneRound :: State Tetris ()
 oneRound =
   do
-    resetGas
+    -- Actually, there is not reset needed
+    -- resetGas
     startingPiece <- generatePiece
     tetris        <- get
     let round = execState fallAllTheWay (Round tetris startingPiece)
     put $ tetrisRound round
     freezePiece $ pieceRound round
 
-resetGas :: State Tetris ()
-resetGas =
-  do
-    tetris <- get
-    let newGasRotation = Ring.reset (gasRotation tetris)
-    let newTetris = tetris { gasRotation = newGasRotation }
-    put newTetris
+-- TODO remove
+-- resetGas :: State Tetris ()
+-- resetGas =
+  -- do
+    -- tetris <- get
+    -- let newGasRotation = Ring.reset (gasRotation tetris)
+    -- let newTetris = tetris { gasRotation = newGasRotation }
+    -- put newTetris
 
 generatePiece :: State Tetris Piece
 generatePiece =
@@ -344,18 +349,7 @@ unitTest =
   do
     validateExample
 
-example = unlines [
-  "Valve AA has flow rate=0; tunnels lead to valves DD, II, BB",
-  "Valve BB has flow rate=13; tunnels lead to valves CC, AA",
-  "Valve CC has flow rate=2; tunnels lead to valves DD, BB",
-  "Valve DD has flow rate=20; tunnels lead to valves CC, AA, EE",
-  "Valve EE has flow rate=3; tunnels lead to valves FF, DD",
-  "Valve FF has flow rate=0; tunnels lead to valves EE, GG",
-  "Valve GG has flow rate=0; tunnels lead to valves FF, HH",
-  "Valve HH has flow rate=22; tunnels lead to valves GG",
-  "Valve II has flow rate=0; tunnels lead to valves AA, JJ",
-  "Valve JJ has flow rate=21; tunnels lead to valves II"
-  ]
+example = ">>><<><>><<<>><>>><<<>>><<<><<<>><>><<>>"
 
 exampleParsed = parse example
 

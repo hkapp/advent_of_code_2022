@@ -69,6 +69,9 @@ flatten = join
 mflatten :: (Monad m) => m (m a) -> m a
 mflatten = join
 
+arrayFromList :: [a] -> Array Int a
+arrayFromList = arrayFromIndexedList . zipWithIndex
+
 arrayFromIndexedList :: [(Int, a)] -> Array Int a
 arrayFromIndexedList xs =
   let
