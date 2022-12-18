@@ -6,9 +6,14 @@ import Test(test, testFmtStr)
 import Utils.State
 import Utils.Ring(Ring)
 import qualified Utils.Ring as Ring
+import qualified Utils.Bfs as Bfs
 
 import Data.Set(Set)
 import qualified Data.Set as Set
+import Data.Int(Int64)
+import Data.List(genericTake)
+
+import System.IO.Unsafe(unsafePerformIO)
 
 run :: String -> IO ()
 run input =
@@ -37,7 +42,7 @@ parseDir '<' = Left
 
 {- Coordinate system -}
 
-type Coord = Int
+type Coord = Int64
 type Pos = (Coord, Coord)
 
 {- ^            |..@@@@.| 4
@@ -143,6 +148,11 @@ pointExceedsBounds tetris dir pos =
         Right -> h > boundRight
   in
     exceeds
+
+pointExceedsAnyBounds :: Tetris -> Pos -> Bool
+pointExceedsAnyBounds tetris pos = (pointExceedsBounds tetris Left pos) ||
+                                   (pointExceedsBounds tetris Right pos) ||
+                                   (vPos pos == 0)
 
 -- Tetris: fall
 
@@ -346,28 +356,77 @@ freezePiece piece =
   do
     tetris <- get
     let insertPiecePositions prevSet = Set.union prevSet (Set.fromList piece)
-    put $ withRockPositions insertPiecePositions tetris
+    put $ reduceTetris $ withRockPositions insertPiecePositions tetris
 
 withRockPositions :: (Set Pos -> Set Pos) -> Tetris -> Tetris
 withRockPositions f tetris = tetris { rockPositions = f (rockPositions tetris) }
 
 {- Task 1 -}
 
-doNRounds :: Int -> State Tetris ()
-doNRounds n = sequence_ $ take n $ repeat oneRound
+doNRounds :: Int64 -> State Tetris ()
+doNRounds n = sequence_ $ genericTake n $ repeat oneRound
 
-stopAfterNRounds :: Int -> Ring Gas -> Tetris
+stopAfterNRounds :: Int64 -> Ring Gas -> Tetris
 stopAfterNRounds nrounds input = execState (doNRounds nrounds) (newTetris input)
 
-task1 :: Ring Gas -> Int
+task1 :: Ring Gas -> Coord
 task1 = task1Param 2022
 
-task1Param :: Int -> Ring Gas -> Int
+task1Param :: Int64 -> Ring Gas -> Coord
 task1Param n = highestRock . stopAfterNRounds n
 
 {- Task 2 -}
 
-task2 = const "not implemented"
+reduceTetris :: Tetris -> Tetris
+reduceTetris tetris =
+  let
+    {- Threshold experiment:
+
+        threshold |    time |  iterations
+        ----------+---------+-------------
+               10 |  7.127s | 100'000
+              100 |  3.365s | 100'000
+             1000 |  3.117s | 100'000
+            10000 | 12.597s | 100'000
+        ----------+---------+-------------
+              100 | 21.580s | 1'000'000
+              150 | 14.751s | 1'000'000
+              200 | 13.538s | 1'000'000
+              250 | 13.910s | 1'000'000
+              300 | 14.181s | 1'000'000
+              400 | 14.887s | 1'000'000
+              500 | 16.104s | 1'000'000
+              750 | 18.099s | 1'000'000
+             1000 | 20.427s | 1'000'000
+             5000 | 61.855s | 1'000'000
+            10000 | 155.95s | 1'000'000
+    -}
+    threshold = 200
+    currRocks = rockPositions tetris
+
+    validCandidate cand = (not $ pointExceedsAnyBounds tetris cand) && (not $ hasRockAt tetris cand)
+
+    localNeighbours pos = filter validCandidate [move Left pos, move Right pos, moveDown pos]
+
+    reachableEmptySpots = Bfs.bfsAllReachable (Bfs.Graph localNeighbours) (startingPos tetris)
+
+    -- now keep all rocks that are above the lowest free reachable spot - 1
+    lowestFreeSpot = minimum $ map vPos $ Set.toList reachableEmptySpots
+    tideMark = lowestFreeSpot - 1
+
+    reducedRocks = Set.filter (\r -> vPos r >= tideMark) currRocks
+  in
+    if length currRocks > threshold
+      then tetris { rockPositions = (awfulPrint ((maximum $ map vPos $ Set.toList reducedRocks) - tideMark, length reducedRocks) reducedRocks) }
+      else tetris
+
+awfulPrint :: (Show a) => a -> b -> b
+awfulPrint x y = unsafePerformIO (print x >>= (const (return y)))
+
+-- Number of dirs in the input gas ring: 10091
+--   this is prime
+task2 :: Ring Gas -> Coord
+task2 = task1Param 1000000
 
 {- Unit Test -}
 
@@ -377,6 +436,7 @@ unitTest =
     debug1
     debug2
     debug3
+    debug4
     validateExample
 
 example = ">>><<><>><<<>><>>><<<>>><<<><<<>><>><<>>"
@@ -477,4 +537,22 @@ debug3 =
 
     rsn n expected = testFmtStr (msg n) expected (showTetris $ stopAfterNRounds n exampleParsed)
 
+    msg n = "task1 example (" ++ (show n) ++ " rounds)"
+
+debug4 :: IO ()
+debug4 =
+  do
+    rsn 12 $ unlines $ [
+      "...#...",
+      "..###..",
+      "...#...",
+      "...####",
+      "....#..",
+      "....#..",
+      "....##.",
+      "##..##.",
+      "######."
+      ] ++ (take 12 $ repeat ".......")
+  where
+    rsn n expected = testFmtStr (msg n) expected (showTetris $ stopAfterNRounds n exampleParsed)
     msg n = "task1 example (" ++ (show n) ++ " rounds)"

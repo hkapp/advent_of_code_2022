@@ -1,6 +1,7 @@
 module Utils.Bfs(
   Graph(..),
-  bfs
+  bfs,
+  bfsAllReachable
 ) where
 
 import Utils.Queue(Queue)
@@ -47,10 +48,21 @@ visit isGoal graph =
 
 bfsSearch :: (Ord n) => (n -> Bool) -> Graph n -> n -> Maybe [n]
 bfsSearch isGoal graph startNode =
-  (flip evalState) initBFS $ repeatUntil stopCondition (visit isGoal graph)
+  (flip evalState) (initBFS startNode) $ repeatUntil stopCondition (visit isGoal graph)
   where
     stopCondition (Just path,  _) = True
     stopCondition (_ , (remQ, _)) = Queue.null remQ
 
-    initBFS = (Queue.singleton [startNode], Set.empty)
+initBFS :: n -> BFS n
+initBFS startNode = (Queue.singleton [startNode], Set.empty)
 
+-- To find all the reachable nodes we need to continuously expand neighbours until there are none left
+-- We do this by calling 'visit' with a goal function that always returns false,
+-- and retrieve the final 'visited' set as final result
+bfsAllReachable :: (Ord n) => Graph n -> n -> Set n
+bfsAllReachable graph startNode =
+  snd $ (flip execState) (initBFS startNode) $ repeatUntil queueIsEmpty (visit neverGoal graph)
+  where
+    neverGoal = const False
+
+    queueIsEmpty (_ , (remQ, _)) = Queue.null remQ
