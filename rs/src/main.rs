@@ -1,4 +1,5 @@
 mod dec2;
+mod dec18;
 
 use std::fs::File;
 use std::io;
@@ -10,8 +11,9 @@ fn main() {
     let file_content = open_file(&filename).unwrap();
 
     match &day as &str {
-        "day2" => dec2::run(file_content),
-        _      => panic!("Not implemented yet: {}", day),
+        "day2"  => dec2::run(file_content),
+        "day18" => dec18::run(file_content),
+        _       => panic!("Not implemented yet: {}", day),
     };
 }
 
