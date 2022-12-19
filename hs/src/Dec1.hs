@@ -1,20 +1,16 @@
+module Dec1 where
+
 import Data.List(unfoldr, sortOn)
 import Data.Ord(Down(..))
 
-main :: IO ()
-main =
+run :: String -> IO ()
+run input =
   do
-    lines <- inputLines
-    let calories = elfCalories lines
+    let calories = elfCalories $ lines input
     putStrLn "Task 1:"
     print $ task1 calories
     putStrLn "Task 2:"
     print $ task2 calories
-
-filename = "day1.data.txt"
-
-inputLines :: IO [String]
-inputLines = lines <$> readFile filename
 
 (<$$>) :: (a -> b) -> [[a]] -> [[b]]
 (<$$>) f = map (map f)

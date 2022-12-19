@@ -1,17 +1,13 @@
-main :: IO ()
-main =
+module Dec4 where
+
+run :: String -> IO ()
+run input =
   do
     unitTest
-    lines <- inputLines
     putStrLn "Task 1:"
-    print $ task1 lines
+    print $ task1 $ lines input
     putStrLn "Task 2:"
-    print $ task2 lines
-
-filename = "day4.data.txt"
-
-inputLines :: IO [String]
-inputLines = lines <$> readFile filename
+    print $ task2 $ lines input
 
 {- Task 1 -}
 

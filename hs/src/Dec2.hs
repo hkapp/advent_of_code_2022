@@ -1,19 +1,15 @@
+module Dec2 where
+
 import Data.List(unfoldr, sortOn)
 import Data.Ord(Down(..))
 
-main :: IO ()
-main =
+run :: String -> IO ()
+run input =
   do
-    lines <- inputLines
     putStrLn "Task 1:"
-    print $ process parseRound1 lines
+    print $ process parseRound1 $ lines input
     putStrLn "Task 2:"
-    print $ process parseRound2 lines
-
-filename = "day2.data.txt"
-
-inputLines :: IO [String]
-inputLines = lines <$> readFile filename
+    print $ process parseRound2 $ lines input
 
 process :: (String -> Round) -> [String] -> Int
 process parseFun lines = sum $ (score . parseFun) <$> lines

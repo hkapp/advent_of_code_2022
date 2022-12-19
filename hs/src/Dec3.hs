@@ -1,18 +1,19 @@
+module Dec3 where
+
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Char(ord)
 import Data.Foldable(traverse_)
 import Data.List(unfoldr)
 
-main :: IO ()
-main =
+run :: String -> IO ()
+run input =
   do
     unitTest
-    lines <- inputLines
     putStrLn "Task 1:"
-    print $ task1 lines
+    print $ task1 $ lines input
     putStrLn "Task 2:"
-    print $ task2 lines
+    print $ task2 $ lines input
 
 filename = "day3.data.txt"
 

@@ -1,5 +1,9 @@
 import System.Environment(getArgs)
 
+import qualified Dec1
+import qualified Dec2
+import qualified Dec3
+import qualified Dec4
 import qualified Dec5
 import qualified Dec6
 import qualified Dec7
@@ -26,6 +30,10 @@ main =
     input <- inputFile day
 
     case day of
+      "day1"  -> Dec1.run input
+      "day2"  -> Dec2.run input
+      "day3"  -> Dec3.run input
+      "day4"  -> Dec4.run input
       "day5"  -> Dec5.run input
       "day6"  -> Dec6.run input
       "day7"  -> Dec7.run input
