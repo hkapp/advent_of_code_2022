@@ -1,10 +1,8 @@
 use std::fs::File;
 use std::io::{self, BufRead};
 
-const DATA_FILEPATH: &str = "task1.txt";
-
-fn main() {
-    let lines = file_lines(DATA_FILEPATH).unwrap();
+pub fn run(file_content: io::BufReader<File>) {
+    let lines = file_content.lines();
     let partial_parse = start_parsing(lines);
     let do_first_task = false;
     let strategy =
@@ -18,11 +16,6 @@ fn main() {
         };
     let cost = measure_strategy(strategy);
     println!("Strategy value: {}", cost);
-}
-
-fn file_lines(filename: &str) -> io::Result<io::Lines<io::BufReader<File>>> {
-    let file = File::open(filename)?;
-    Ok(io::BufReader::new(file).lines())
 }
 
 #[derive(Clone, Copy, Debug)]
