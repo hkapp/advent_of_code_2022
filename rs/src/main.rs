@@ -1,6 +1,10 @@
 mod dec2;
 mod dec18;
 
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
+
 use std::fs::File;
 use std::io;
 use std::env;
