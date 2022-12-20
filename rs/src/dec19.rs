@@ -6,6 +6,7 @@ use std::cmp;
 use std::ops::{Index, IndexMut};
 use std::convert::{TryFrom, TryInto};
 use std::cell::Cell;
+use std::vec;
 
 type Input<T> = io::BufReader<T>;
 
@@ -14,11 +15,11 @@ pub fn run(file_content: Input<File>) {
 
     let res1 = task1(&parsed);
     println!("Task 1: {}", res1);
-    //assert_eq!(res1, 3650);
+    assert_eq!(res1, 1177);
 
-    //let res2 = task2(&parsed);
-    //println!("Task 2: {}", res2);
-    //assert_eq!(res2, 2118);
+    let res2 = task2(&parsed);
+    println!("Task 2: {}", res2);
+    assert_eq!(res2, 62744);
 }
 
 /* Parsing */
@@ -195,8 +196,8 @@ fn astar<T>(start: T) -> T
     let mut pq = BinaryHeap::new();
     pq.push(start);
 
-    let mut pruned = 0;
-    let mut expanded = 0;
+    let mut pruned: u64 = 0;
+    let mut expanded: u64 = 0;
 
     while let Some(curr_node) = pq.pop() {
         if curr_node.prune(&curr_best) {
@@ -379,42 +380,18 @@ impl<'a> Ord for Game<'a> {
 
 /* Part 2: state expansion */
 
+type Action = Option<Robot>;
+
 struct Explorer<'a> {
     base_game: Game<'a>,
-    curr_idx:  usize
+    moves:     vec::IntoIter<Action>
 }
 
 impl<'a> Explorer<'a> {
     fn new(base_game: Game<'a>) -> Self {
         Explorer {
+            moves: next_moves(&base_game).into_iter(),
             base_game,
-            curr_idx: 0
-        }
-    }
-
-    fn find_next_move(&mut self) -> Option<Option<Mineral>> {
-        // TODO we can reduce the search space here
-        // 1. No need to build a robot if production exceeds cost of robots that need this resource
-        // 2. If you can build a robot, always do so
-        if self.curr_idx > NUM_MINERALS || self.base_game.is_over() {
-            /* No more moves */
-            return None;
-        }
-        else if self.curr_idx == NUM_MINERALS {
-            /* Don't buy anything, just let time pass */
-            self.curr_idx += 1;
-            return Some(None);
-        }
-        else {
-            let m = self.curr_idx.try_into().unwrap();
-            self.curr_idx += 1;
-            if self.base_game.can_buy_robot(m) {
-                return Some(Some(m));
-            }
-            else {
-                /* continue searching */
-                return self.find_next_move();
-            }
         }
     }
 }
@@ -423,7 +400,7 @@ impl<'a> Iterator for Explorer<'a> {
     type Item = Game<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.find_next_move() {
+        match self.moves.next() {
             Some(next_move) => {
                 let mut next_game_state = self.base_game.clone();
                 next_game_state.one_round(next_move);
@@ -433,6 +410,54 @@ impl<'a> Iterator for Explorer<'a> {
         }
     }
 
+}
+
+/* Same actions taken as input to Game::one_round */
+fn next_moves(game: &Game) -> Vec<Action> {
+    // TODO we can reduce the search space here
+    // Note: we can't assume that it's better to always build a robot if we can, we
+    if game.is_over() {
+        return Vec::new();
+    }
+
+    // If we produce enough resources to build a Geode robot per turn,
+    // we should just do that
+    if production_covers_geode_cost(game) {
+        return vec![Some(Geode)];
+    }
+
+    let mut actions = Vec::new();
+    // We can always "do nothing"
+    actions.push(None);
+
+    for m in Mineral::all() {
+        if game.can_buy_robot(*m)
+            && !pointless_to_increase(*m, game)
+        {
+            actions.push(Some(*m));
+        }
+    }
+
+    return actions;
+}
+
+// No need to build a robot if the current production of that resource
+// exceeds the cost requirement of robots for that resource
+fn pointless_to_increase(m: Mineral, game: &Game) -> bool {
+    match m {
+        Geode => false,
+        _ => {
+            let curr_prod = game.state.resources[m].production as Stock;
+            game.costs.0.iter()
+                .all(|rcost| rcost[m] <= curr_prod)
+        }
+    }
+}
+
+// Can we build a Geode robot every turn?
+fn production_covers_geode_cost(game: &Game) -> bool {
+    Mineral::all().iter()
+        .all(|m| game.state.resources[*m].production as Stock >= game.costs[Geode][*m])
 }
 
 /* Part 3: potential */
@@ -506,8 +531,30 @@ impl<'a> AStar for Game<'a> {
     }
 }
 
-fn optimal_for_blueprint(bp: &Blueprint) -> Score {
-    astar(Game::new(bp, 24)).score()
+fn optimal_for_blueprint(bp: &Blueprint, init_time: u8) -> Score {
+    astar(Game::new(bp, init_time)).score()
+}
+
+/* Task 1 */
+
+fn task1(bps: &[Blueprint]) -> u32 {
+    use rayon::prelude::*;
+    bps.par_iter()
+        .map(|bp| optimal_for_blueprint(bp, 24))
+        .enumerate()
+        .map(|(i, x)| (i as u32 + 1) * x as u32)
+        .sum()
+}
+
+/* Task 2 */
+
+fn task2(bps: &[Blueprint]) -> u64 {
+    use rayon::prelude::*;
+    let max_range = cmp::min(bps.len(), 3);
+    bps[0..max_range].par_iter()
+        .map(|bp| optimal_for_blueprint(bp, 32))
+        .map(|x| x as u64)
+        .product()
 }
 
 /* Unit tests */
@@ -534,14 +581,32 @@ mod tests {
     }
 
     #[test]
-    fn validate_bp1() {
-        let bps: &Vec<Blueprint> = &EXAMPLE_BLUEPRINTS;
-        println!("{:?}", bps);
-        assert_eq!(optimal_for_blueprint(&EXAMPLE_BLUEPRINTS[0]), 9);
+    fn validate_task1_bp1() {
+        assert_eq!(optimal_for_blueprint(&EXAMPLE_BLUEPRINTS[0], 24), 9);
     }
 
     #[test]
-    fn validate_bp2() {
-        assert_eq!(optimal_for_blueprint(&EXAMPLE_BLUEPRINTS[1]), 12);
+    fn validate_task1_bp2() {
+        assert_eq!(optimal_for_blueprint(&EXAMPLE_BLUEPRINTS[1], 24), 12);
+    }
+
+    #[test]
+    fn validate_task1() {
+        assert_eq!(task1(&EXAMPLE_BLUEPRINTS), 33);
+    }
+
+    #[test]
+    fn validate_task2_bp1() {
+        assert_eq!(optimal_for_blueprint(&EXAMPLE_BLUEPRINTS[0], 32), 56);
+    }
+
+    #[test]
+    fn validate_task2_bp2() {
+        assert_eq!(optimal_for_blueprint(&EXAMPLE_BLUEPRINTS[1], 32), 62);
+    }
+
+    #[test]
+    fn validate_task2() {
+        assert_eq!(task2(&EXAMPLE_BLUEPRINTS), 56*62);
     }
 }
