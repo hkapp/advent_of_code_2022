@@ -1,5 +1,6 @@
 mod dec2;
 mod dec18;
+mod dec19;
 
 #[cfg(test)]
 #[macro_use]
@@ -17,6 +18,7 @@ fn main() {
     match &day as &str {
         "day2"  => dec2::run(file_content),
         "day18" => dec18::run(file_content),
+        "day19" => dec19::run(file_content),
         _       => panic!("Not implemented yet: {}", day),
     };
 }

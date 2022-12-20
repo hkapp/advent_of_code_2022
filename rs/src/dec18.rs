@@ -152,7 +152,8 @@ fn bfs_accum<FA, FN, I, N>(mut accum: FA, neighbours_of: FN, start_node: N) -> (
         I: Iterator<Item=N>,
         N: Hash + Eq
 {
-    let mut queue = VecDeque::from([start_node]);
+    let mut queue = VecDeque::new();
+    queue.push_back(start_node);
     let mut visited = HashSet::new();
 
     while let Some(curr_node) = queue.pop_front() {
