@@ -10,10 +10,10 @@ use std::cell::Cell;
 type Input<T> = io::BufReader<T>;
 
 pub fn run(file_content: Input<File>) {
-    //let parsed = parse(file_content);
+    let parsed = parse(file_content);
 
-    //let res1 = task1(&parsed);
-    //println!("Task 1: {}", res1);
+    let res1 = task1(&parsed);
+    println!("Task 1: {}", res1);
     //assert_eq!(res1, 3650);
 
     //let res2 = task2(&parsed);
@@ -23,27 +23,46 @@ pub fn run(file_content: Input<File>) {
 
 /* Parsing */
 
-//fn parse<T: io::Read>(file_content: Input<T>) -> Droplet {
-    //#[allow(non_snake_case)]
-    //fn parse_point3D(line: String) -> Point3D {
-        //let mut digits = line.split(",")
-                            //.map(|s| s.parse::<Coord>().unwrap());
-        //Point3D {
-            //coords: [
-                //digits.next().unwrap(),
-                //digits.next().unwrap(),
-                //digits.next().unwrap()]
-        //}
-    //}
+fn parse<T: io::Read>(file_content: Input<T>) -> Vec<Blueprint> {
+    #[allow(non_snake_case)]
+    fn parse_blueprint(line: String) -> Blueprint {
+        use regex::Regex;
+        let re = Regex::new(
+r"Blueprint (\d+): Each ore robot costs (\d+) ore. Each clay robot costs (\d+) ore. Each obsidian robot costs (\d+) ore and (\d+) clay. Each geode robot costs (\d+) ore and (\d+) obsidian."
+        ).unwrap();
 
-    //let points = file_content
-                    //.lines()
-                    //.map(|r| r.unwrap())
-                    //.map(parse_point3D)
-                    //.collect::<HashSet<Point3D>>();
+        let numbers = re.captures(&line).expect("Couldn't match the regex");
+        assert_eq!(numbers.len(), 7+1);
 
-    //Droplet { points }
-//}
+        // Warning! index 0 stores the whole match
+        let number_at = |n| {
+            numbers.get(n+1 as usize).unwrap().as_str().parse().unwrap()
+        };
+
+        let mut bp = new_blueprint();
+        /* Number 0 is blueprint id */
+        /* Number 1 is Ore cost of Ore robot */
+        bp[Ore][Ore] = number_at(1);
+        /* Number 2 is Ore cost of Clay robot */
+        bp[Clay][Ore] = number_at(2);
+        /* Number 3 is Ore cost of Obsidian robot */
+        bp[Obsidian][Ore] = number_at(3);
+        /* Number 4 is Clay cost of Obsidian robot */
+        bp[Obsidian][Clay] = number_at(4);
+        /* Number 5 is Ore cost of Geode robot */
+        bp[Geode][Ore] = number_at(5);
+        /* Number 6 is Obsidian cost of Geode robot */
+        bp[Geode][Obsidian] = number_at(6);
+
+        return bp;
+    }
+
+    file_content
+        .lines()
+        .map(|r| r.unwrap())
+        .map(parse_blueprint)
+        .collect::<Vec<Blueprint>>()
+}
 
 /* Mineral */
 
@@ -90,8 +109,14 @@ impl TryFrom<usize> for Mineral {
 }
 
 const NUM_MINERALS: usize = 4;
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct MArray<T>([T; NUM_MINERALS]);
+
+impl<T: Clone> MArray<T> {
+    fn new_all(val: &T) -> Self {
+        MArray([val.clone(), val.clone(), val.clone(), val.clone()])
+    }
+}
 
 impl<T> Index<Mineral> for MArray<T> {
     type Output = T;
@@ -170,15 +195,23 @@ fn astar<T>(start: T) -> T
     let mut pq = BinaryHeap::new();
     pq.push(start);
 
+    let mut pruned = 0;
+    let mut expanded = 0;
+
     while let Some(curr_node) = pq.pop() {
         if curr_node.prune(&curr_best) {
+            pruned += 1;
             continue;
         }
         for next in curr_node.expand() {
+            expanded += 1;
             pq.push(next);
         }
         curr_best = cmp::max(curr_best, curr_node);
     }
+
+    println!("astar: expanded {} nodes, pruned {}", expanded, pruned);
+
     return curr_best;
 }
 
@@ -187,6 +220,10 @@ fn astar<T>(start: T) -> T
 /* For each mineral, tell the cost of producing a robot of that type */
 type Cost = MArray<Stock>;
 type Blueprint = MArray<Cost>;
+
+fn new_blueprint() -> Blueprint {
+    MArray::new_all(&MArray::new_all(&0))
+}
 
 /* Game */
 
@@ -244,6 +281,9 @@ impl<'a> Game<'a> {
         if let Some(robot) = action {
             self.state.resources[robot].inc_production();
         }
+
+        // Reduce time left
+        self.time_left -= 1;
     }
 
     fn score(&self) -> Score {
@@ -476,56 +516,32 @@ fn optimal_for_blueprint(bp: &Blueprint) -> Score {
 mod tests {
     use super::*;
 
-    const EXAMPLE: &str = "2,2,2
-1,2,2
-3,2,2
-2,1,2
-2,3,2
-2,2,1
-2,2,3
-2,2,4
-2,2,6
-1,2,5
-3,2,5
-2,1,5
-2,3,5";
+    const EXAMPLE: &str = "\
+    Blueprint 1: \
+        Each ore robot costs 4 ore. \
+        Each clay robot costs 2 ore. \
+        Each obsidian robot costs 3 ore and 14 clay. \
+        Each geode robot costs 2 ore and 7 obsidian.
+    Blueprint 2: \
+        Each ore robot costs 2 ore. \
+        Each clay robot costs 3 ore. \
+        Each obsidian robot costs 3 ore and 8 clay. \
+        Each geode robot costs 3 ore and 12 obsidian.";
 
     lazy_static! {
-        static ref EXAMPLE_DROPLET: Droplet =
+        static ref EXAMPLE_BLUEPRINTS: Vec<Blueprint> =
             parse(io::BufReader::new(EXAMPLE.as_bytes()));
     }
 
     #[test]
-    fn validate_example1() {
-        assert_eq!(task1(&EXAMPLE_DROPLET), 64);
+    fn validate_bp1() {
+        let bps: &Vec<Blueprint> = &EXAMPLE_BLUEPRINTS;
+        println!("{:?}", bps);
+        assert_eq!(optimal_for_blueprint(&EXAMPLE_BLUEPRINTS[0]), 9);
     }
 
     #[test]
-    fn validate_example2() {
-        assert_eq!(task2(&EXAMPLE_DROPLET), 58);
-    }
-
-    #[test]
-    fn test_neighbours0() {
-        let origin = Point3D { coords: [0, 0, 0] };
-        let mut neighs = EXAMPLE_DROPLET.neighbours(origin);
-        for i in 0..NUM_NEIGHBOURS {
-            assert_eq!(neighs.next(), Some(NEIGHBOUR_OFFSETS[i]));
-        }
-        assert_eq!(neighs.next(), None);
-    }
-
-    #[test]
-    fn test_neighbours1() {
-        let origin = Point3D { coords: [1, 1, 1] };
-        let mut neighs = EXAMPLE_DROPLET.neighbours(origin);
-        for i in 0..NUM_NEIGHBOURS {
-            let mut neighbour = NEIGHBOUR_OFFSETS[i];
-            neighbour.coords[0] += 1;
-            neighbour.coords[1] += 1;
-            neighbour.coords[2] += 1;
-            assert_eq!(neighs.next(), Some(neighbour));
-        }
-        assert_eq!(neighs.next(), None);
+    fn validate_bp2() {
+        assert_eq!(optimal_for_blueprint(&EXAMPLE_BLUEPRINTS[1]), 12);
     }
 }
