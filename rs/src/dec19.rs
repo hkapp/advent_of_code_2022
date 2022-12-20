@@ -397,8 +397,59 @@ impl<'a> Iterator for Explorer<'a> {
 
 /* Part 3: potential */
 
+/* We compute the theoretical max of a game state by running under the following assumptions:
+ * If the agent can pay for one robot of a given kind, it can produce one robot of that kind each round
+ * Only Clay costs Ore
+ *
+ * Under these assumptions, the theoretical optimum is given by building robots down the graph
+ * of cost requirements.
+ *
+ * Requirements:
+ * Ore            -> Ore
+ * Ore            -> Clay
+ * Ore + Clay     -> Obsidian
+ * Ore + Obsidian -> Geode
+ */
 fn compute_potential(game: &Game) -> Score {
-    1 // FIXME
+    let mut rollout_game = game.clone();
+    /* Ignore the Ore cost of Obsidian and Geode */
+    let mut dep_costs = rollout_game.costs.clone();
+    dep_costs[Obsidian][Ore] = 0;
+    dep_costs[Geode][Ore] = 0;
+
+    /* When buying robots, pretend that they don't cost anything */
+    let free = MArray([0; NUM_MINERALS]);
+    let zero_costs = MArray([free.clone(), free.clone(), free.clone(), free.clone()]);
+
+    let produce = |m, g: &Game| {
+        g.state.resources[m].production > 0
+    };
+
+    let mut until_can_produce = |target, dependency| {
+        while !produce(target, &rollout_game) && !rollout_game.is_over() {
+            /* Add 1 `dependency` robot every turn until we have enough for one `target` robot */
+            rollout_game.costs = &dep_costs;
+            let next_robot = if rollout_game.can_buy_robot(target) { target } else { dependency };
+            rollout_game.costs = &zero_costs;
+            rollout_game.one_round(Some(next_robot));
+        }
+    };
+
+    until_can_produce(Clay, Ore);
+    until_can_produce(Obsidian, Clay);
+    until_can_produce(Geode, Obsidian);
+
+    let mut geodes_until_the_end = || {
+        rollout_game.costs = &zero_costs;
+        while !rollout_game.is_over() {
+            /* Add 1 Geode robot every turn */
+            rollout_game.one_round(Some(Geode));
+        }
+    };
+
+    geodes_until_the_end();
+
+    return rollout_game.score();
 }
 
 impl<'a> AStar for Game<'a> {
@@ -413,6 +464,10 @@ impl<'a> AStar for Game<'a> {
         // than the current best score
         (self.score() + self.potential()) <= curr_best.score()
     }
+}
+
+fn optimal_for_blueprint(bp: &Blueprint) -> Score {
+    astar(Game::new(bp, 24)).score()
 }
 
 /* Unit tests */
