@@ -8,10 +8,10 @@ pub fn run(file_content: Input<File>) {
 
     let res1 = task1(&parsed);
     println!("Task 1: {}", res1);
-    //assert_eq!(res1, 1177);
+    assert_eq!(res1, 8302);
 
-    //let res2 = task2(&parsed);
-    //println!("Task 2: {}", res2);
+    let res2 = task2(&parsed);
+    println!("Task 2: {}", res2);
     //assert_eq!(res2, 62744);
 }
 
@@ -87,26 +87,76 @@ fn shuffle_once(message: &mut Vec<Val>, x: Val) {
 	message.insert(new_pos, x);
 }
 
-fn shuffle_all(input: &[Val]) -> Vec<Val> {
+fn shuffle_all(input: &[Val], times: u8) -> Vec<Val> {
 	let mut message = Vec::from(input);
-	for x in input {
-		shuffle_once(&mut message, *x);
+	for _i in 0..times {
+		for x in input {
+			shuffle_once(&mut message, *x);
+		}
 	}
 	return message;
 }
 
 /* Task 1 */
 
-fn task1(input: &[Val]) -> Shift {
-	let shuffled = shuffle_all(input);
-	let zero = find_shift_pos(&shuffled, 0).expect("Couldn't find 0");
-	
-	let len = shuffled.len();
+fn compute_score(decrypted: &[Val]) -> Shift {
+	let zero = find_shift_pos(decrypted, 0).expect("Couldn't find 0");
+	let len = decrypted.len();
+
 	let mod_at = |i| {
-		let val: &Val = &shuffled[(zero + i) % len];
+		let val: &Val = &decrypted[(zero + i) % len];
 		val.shift
 	};
-	
+
+	mod_at(1000) + mod_at(2000) + mod_at(3000)
+}
+
+fn task1(input: &[Val]) -> Shift {
+	let shuffled = shuffle_all(input, 1);
+	compute_score(&shuffled)
+}
+
+/* Task 2 */
+
+const DECRYPTION_KEY: i64 = 811589153;
+
+fn task2(input: &[Val]) -> i64 {
+	let apply_key = |orig_val: &Val| {
+		let naive: i64 = orig_val.shift as i64 * DECRYPTION_KEY;
+		let reduced = (naive % (input.len() as i64 - 1)) as Shift;
+		Val {
+			id:    orig_val.id,
+			shift: reduced,
+		}
+	};
+
+	let mapped_input = input.iter()
+						.map(apply_key)
+						.collect::<Vec<Val>>();
+
+	let mapped_decrypt = shuffle_all(&mapped_input, 10);
+
+	let retrieve_naive = |mval: &Val| {
+		input[mval.id as usize].shift as i64 * DECRYPTION_KEY
+	};
+
+	let decrypt_mapped_back = mapped_decrypt.iter()
+								.map(retrieve_naive)
+								.collect::<Vec<i64>>();
+
+	/* compute_score */
+	let zero = decrypt_mapped_back.iter()
+					.enumerate()
+					.find(|(_idx, x)| **x == 0)
+					.map(|(idx, _x)| idx)
+					.expect("Couldn't find 0");
+
+	let len = decrypt_mapped_back.len();
+
+	let mod_at = |i| {
+		decrypt_mapped_back[(zero + i) % len]
+	};
+
 	mod_at(1000) + mod_at(2000) + mod_at(3000)
 }
 
@@ -143,7 +193,7 @@ mod tests {
     #[test]
     fn validate_task1_steps() {
         let mut message = Vec::from(&EXAMPLE_PARSED as &[Val]);
-        
+
         let mut step = |shift, expected| {
 			let id_usz = find_shift_pos(&EXAMPLE_PARSED, shift).expect("Couldn't find shift value");
 			let val = Val { id: id_usz as Id, shift };
@@ -152,7 +202,7 @@ mod tests {
 			align_heads(&mut message_shifts, expected);
 			assert_eq!(&message_shifts, expected);
 		};
-        
+
         step(1, &[2, 1, -3, 3, -2, 0, 4]);
         step(2, &[1, -3, 2, 3, -2, 0, 4]);
         step(-3, &[1, 2, 3, -2, -3, 0, 4]);
@@ -160,6 +210,11 @@ mod tests {
         step(-2, &[1, 2, -3, 0, 3, 4, -2]);
         step(0, &[1, 2, -3, 0, 3, 4, -2]);
         step(4, &[1, 2, -3, 4, 0, 3, -2]);
+    }
+
+    #[test]
+    fn validate_task2() {
+        assert_eq!(task2(&EXAMPLE_PARSED), 1623178306);
     }
 
 }
