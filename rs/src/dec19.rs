@@ -4,7 +4,7 @@ use std::iter::Iterator;
 use std::collections::BinaryHeap;
 use std::cmp;
 use std::ops::{Index, IndexMut};
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::cell::Cell;
 use std::vec;
 
