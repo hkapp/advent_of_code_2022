@@ -8,9 +8,9 @@ type Input<T> = io::BufReader<T>;
 pub fn run(file_content: Input<File>) {
     let parsed = parse(file_content);
 
-    //let res1 = task1(&parsed);
-    //println!("Task 1: {}", res1);
-    //assert_eq!(res1, 8302);
+    let res1 = task1(&parsed);
+    println!("Task 1: {}", res1);
+    assert_eq!(res1, 286698846151845);
 
     //let res2 = task2(&parsed);
     //println!("Task 2: {}", res2);
@@ -104,61 +104,42 @@ fn monkey_eval(name: &Name, troop: &Troop, known: &mut HashMap<Name, Value>)
 	return value;
 }
 
+/* Task 1 */
+
+fn task1(troop: &Troop) -> Value {
+	monkey_eval(&String::from("root"), troop, &mut HashMap::new())
+}
+
 /* Unit tests */
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const EXAMPLE: &str = "1
-2
--3
-3
--2
-0
-4";
+    const EXAMPLE: &str = "root: pppw + sjmn
+dbpl: 5
+cczh: sllz + lgvd
+zczc: 2
+ptdq: humn - dvpt
+dvpt: 3
+lfqf: 4
+humn: 5
+ljgn: 2
+sjmn: drzm * dbpl
+sllz: 4
+pppw: cczh / lfqf
+lgvd: ljgn * ptdq
+drzm: hmdt - zczc
+hmdt: 32";
 
     lazy_static! {
-        static ref EXAMPLE_PARSED: Vec<Val> =
+        static ref EXAMPLE_PARSED: Troop =
             parse(io::BufReader::new(EXAMPLE.as_bytes()));
     }
 
     #[test]
     fn validate_task1() {
-        assert_eq!(task1(&EXAMPLE_PARSED), 3);
-    }
-
-	fn align_heads(to_align: &mut Vec<Shift>, reference: &[Shift]) {
-		let anchor = reference[0];
-		let anchor_pos = find_pos(&to_align, |x| *x == anchor).expect("Couldn't find anchor");
-		to_align.rotate_left(anchor_pos);
-	}
-
-    #[test]
-    fn validate_task1_steps() {
-        let mut message = Vec::from(&EXAMPLE_PARSED as &[Val]);
-
-        let mut step = |shift, expected| {
-			let id_usz = find_shift_pos(&EXAMPLE_PARSED, shift).expect("Couldn't find shift value");
-			let val = Val { id: id_usz as Id, shift };
-			shuffle_once(&mut message, val);
-			let mut message_shifts: Vec<Shift> = message.iter().map(|x| x.shift).collect();
-			align_heads(&mut message_shifts, expected);
-			assert_eq!(&message_shifts, expected);
-		};
-
-        step(1, &[2, 1, -3, 3, -2, 0, 4]);
-        step(2, &[1, -3, 2, 3, -2, 0, 4]);
-        step(-3, &[1, 2, 3, -2, -3, 0, 4]);
-        step(3, &[1, 2, -2, -3, 0, 3, 4]);
-        step(-2, &[1, 2, -3, 0, 3, 4, -2]);
-        step(0, &[1, 2, -3, 0, 3, 4, -2]);
-        step(4, &[1, 2, -3, 4, 0, 3, -2]);
-    }
-
-    #[test]
-    fn validate_task2() {
-        assert_eq!(task2(&EXAMPLE_PARSED), 1623178306);
+        assert_eq!(task1(&EXAMPLE_PARSED), 152);
     }
 
 }
