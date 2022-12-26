@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::collections::HashMap;
-use std::ops;
 use std::str::FromStr;
 
 type Input<T> = io::BufReader<T>;
@@ -151,6 +150,7 @@ fn task1(troop: &Troop) -> Value {
 
 /* Task 2 */
 
+#[allow(dead_code)]
 fn print_paths_to(curr_path: &[Name], dest: &Name, troop: &Troop) {
 	let curr_name = curr_path.last().unwrap();
 	if curr_name == dest {
@@ -297,7 +297,7 @@ fn task2(troop: &Troop) -> Value {
 		};
 
 	let mut curr_value = val_side;
-	let mut solver = eq_side;
+	let solver = eq_side;
 	for eq_step in solver.into_iter().rev() {
 		let lstep = eq_step.left.unwrap_or(curr_value);
 		let rstep = eq_step.right.unwrap_or(curr_value);

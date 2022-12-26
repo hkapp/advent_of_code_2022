@@ -1,17 +1,16 @@
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::collections::HashMap;
-use std::ops;
 use std::str::FromStr;
 
 type Input<T> = io::BufReader<T>;
 
 pub fn run(file_content: Input<File>) {
-    //let parsed = parse(file_content);
+    let (planet, moves) = parse(file_content);
 
-    //let res1 = task1(&parsed);
-    //println!("Task 1: {}", res1);
-    //assert_eq!(res1, 286698846151845);
+    let res1 = task1(&planet, &moves);
+    println!("Task 1: {}", res1);
+    assert_eq!(res1, 88226);
 
     //let res2 = task2(&parsed);
     //println!("Task 2: {}", res2);
@@ -20,46 +19,160 @@ pub fn run(file_content: Input<File>) {
 
 /* Parsing */
 
-//fn parse<T: io::Read>(file_content: Input<T>) -> Troop {
-	//fn parse_monkey(s: String) -> (Name, Monkey) {
-		//let mut elem_iter = s.split_whitespace();
+fn parse<T: io::Read>(file_content: Input<T>) -> (Planet, Vec<Move>) {
+    let mut line_iter = file_content.lines();
 
-		//let tmp_name = elem_iter.next().unwrap();
-		//let name = String::from(&tmp_name[0..4]);
-		//assert_eq!(name.len(), 4);
+    // Parse the planet
+    let mut curr_row = 1;
+    let mut planet = Planet::empty();
 
-		//let decider = elem_iter.next().unwrap();
-		//let monkey =
-			//match decider.parse::<Value>() {
-				//Ok(n) => {
-					//Monkey::Const(n)
-				//}
-				//Err(_) => {
-					//let op_char = elem_iter.next().unwrap();
-					//assert_eq!(op_char.len(), 1);
-					//let op = op_char.parse().unwrap();
+    while let Some(line_res) = line_iter.next() {
+		let line = line_res.unwrap();
+		if line.is_empty() {
+			// This is the separator
+			// What follows is the move sequence
+			break;
+		}
 
-					//let left_name = String::from(decider);
-					//assert_eq!(left_name.len(), 4);
+		parse_planet_row(&mut planet, line, curr_row);
+		curr_row += 1;
+	}
 
-					//let tmp_right_name = elem_iter.next().unwrap();
-					//let right_name = String::from(tmp_right_name);
-					//assert_eq!(right_name.len(), 4);
+	// Parse the move sequence
+	let move_line = line_iter.next().unwrap().unwrap();
+	assert!(line_iter.next().is_none());
+	let mut moves = Vec::new();
+	for segment in segregate_str(&move_line, char::is_ascii_digit) {
+		let m =
+			match segment {
+				Ok(digits) => Move::Walk(digits.parse().unwrap()),
+				Err(chars) => Move::Turn(chars.parse().unwrap()),
+			};
+		moves.push(m);
+	}
 
-					//Monkey::Op(left_name, right_name, op)
-				//}
-			//};
-		//assert_eq!(elem_iter.next(), None);
+	return (planet, moves);
+}
 
-		//return (name, monkey);
-	//}
+impl FromStr for Rotation {
+    type Err = String;
 
-    //file_content
-        //.lines()
-        //.map(io::Result::unwrap)
-        //.map(parse_monkey)
-        //.collect::<Troop>()
-//}
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+		match s {
+			"R" => Ok(Rotation::Clockwise),
+			"L" => Ok(Rotation::CounterClockwise),
+			_   => Err(format!("Invalid rotation: {:?}", s)),
+		}
+	}
+}
+
+fn segregate_str<P>(s: &str, pred: P) -> SegregateStr<P>
+	where
+		P: Fn(&char) -> bool
+{
+	SegregateStr {
+		remaining: s,
+		pred
+	}
+}
+
+struct SegregateStr<'a, P> {
+	remaining: &'a str,
+	pred:      P
+}
+
+impl<'a, P> Iterator for SegregateStr<'a, P>
+	where P: Fn(&char) -> bool
+{
+	type Item = Result<&'a str, &'a str>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.remaining.is_empty() {
+			return None;
+		}
+
+		let first_char = self.remaining.chars().next().unwrap();
+		let const_res = (self.pred)(&first_char);
+		let split_idx = self.remaining
+							.chars()
+							.take_while(|c| (self.pred)(c) == const_res)
+							.count();
+
+		let (returned, new_remaining) = self.remaining.split_at(split_idx);
+		self.remaining = new_remaining;
+
+		match const_res {
+			true  => Some(Ok(returned)),
+			false => Some(Err(returned)),
+		}
+	}
+}
+
+#[allow(dead_code)]
+fn segregate<T, P>(elems: &[T], pred: P) -> Segregate<T, P>
+	where
+		P: Fn(&T) -> bool
+{
+	Segregate {
+		remaining: elems,
+		pred
+	}
+}
+
+struct Segregate<'a, T, P> {
+	remaining: &'a [T],
+	pred:      P
+}
+
+impl<'a, T, P> Iterator for Segregate<'a, T, P>
+	where P: Fn(&T) -> bool
+{
+	type Item = Result<&'a [T], &'a [T]>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.remaining.is_empty() {
+			return None;
+		}
+
+		let const_res = (self.pred)(&self.remaining[0]);
+		let mut curr_idx = 1;
+		while curr_idx < self.remaining.len() {
+			if (self.pred)(&self.remaining[curr_idx]) == const_res {
+				// Same result: expand and continue
+				curr_idx += 1;
+				continue;
+			}
+			else {
+				// Different result: build and return
+				// We want to include up until the previous element only
+				curr_idx -= 1;
+				break;
+			}
+		}
+
+		let (returned, new_remaining) = self.remaining.split_at(curr_idx+1);
+		self.remaining = new_remaining;
+
+		match const_res {
+			true  => Some(Ok(returned)),
+			false => Some(Err(returned)),
+		}
+	}
+}
+
+fn parse_planet_row(planet: &mut Planet, row_str: String, row_idx: Coord) {
+	let mut curr_col = 1;
+	for c in row_str.chars() {
+		let curr_pos = Pos::from_row_col(row_idx, curr_col);
+		match c {
+			' ' => {},
+			'.' => { planet.terrain.insert(curr_pos, Tile::Open); },
+			'#' => { planet.terrain.insert(curr_pos, Tile::Blocked); },
+			_   => { panic!("Unknown tile: {:?}", c); },
+		}
+		curr_col += 1;
+	}
+}
 
 /* Coordinate system */
 
@@ -86,6 +199,7 @@ struct Pos {
 enum Dir {
 	Left, Right, Up, Down
 }
+use Dir::*;
 
 impl Pos {
 	fn from_row_col(row: Coord, col: Coord) -> Pos {
@@ -146,6 +260,12 @@ enum Tile {
 }
 
 impl Planet {
+	fn empty() -> Self {
+		Planet {
+			terrain: HashMap::new()
+		}
+	}
+
 	fn next_pos_in_dir(&self, curr_pos: Pos, dir: Dir) -> Pos {
 		let unchecked = curr_pos.move_dir(dir);
 		if !self.terrain.contains_key(&unchecked) {
@@ -160,9 +280,9 @@ impl Planet {
 	}
 
 	fn wrap_around(&self, pos: Pos, dir: Dir) -> Pos {
+		use Dir::*;
 		match dir {
 			Left  => {
-				assert_eq!(pos.column(), 0);
 				/* New column is the maximum column for this row */
 				let new_col = self.max_col_on_row(pos.row());
 				pos.with_column(new_col)
@@ -172,7 +292,6 @@ impl Planet {
 				pos.with_column(new_col)
 			}
 			Up => {
-				assert_eq!(pos.row(), 0);
 				let new_row = self.max_row_on_col(pos.column());
 				pos.with_row(new_row)
 			}
@@ -184,20 +303,20 @@ impl Planet {
 	}
 
 	// TODO cache all of these
-	fn max_col_on_row(&self, rowIdx: Coord) -> Coord {
-		self.compute_wraparound(rowIdx, true, true)
+	fn max_col_on_row(&self, row_idx: Coord) -> Coord {
+		self.compute_wraparound(row_idx, true, true)
 	}
 
-	fn min_col_on_row(&self, rowIdx: Coord) -> Coord {
-		self.compute_wraparound(rowIdx, true, false)
+	fn min_col_on_row(&self, row_idx: Coord) -> Coord {
+		self.compute_wraparound(row_idx, true, false)
 	}
 
-	fn max_row_on_col(&self, colIdx: Coord) -> Coord {
-		self.compute_wraparound(colIdx, false, true)
+	fn max_row_on_col(&self, col_idx: Coord) -> Coord {
+		self.compute_wraparound(col_idx, false, true)
 	}
 
-	fn min_row_on_col(&self, colIdx: Coord) -> Coord {
-		self.compute_wraparound(colIdx, false, false)
+	fn min_row_on_col(&self, col_idx: Coord) -> Coord {
+		self.compute_wraparound(col_idx, false, false)
 	}
 
 	fn compute_wraparound(&self, idx: Coord, on_rows: bool, do_max: bool) -> Coord {
@@ -249,8 +368,8 @@ impl<'a> Astronaut<'a> {
 		}
 	}
 
-	fn turn(&mut self, new_dir: Dir) {
-		self.curr_dir = new_dir;
+	fn turn(&mut self, rotation: Rotation) {
+		self.curr_dir = rotation.apply_to(self.curr_dir);
 	}
 }
 
@@ -258,7 +377,36 @@ impl<'a> Astronaut<'a> {
 
 enum Move {
 	Walk(Coord),
-	Turn(Dir)
+	Turn(Rotation)
+}
+
+#[derive(Clone, Copy)]
+enum Rotation {
+	Clockwise,
+	CounterClockwise
+}
+
+impl Rotation {
+	fn apply_to(&self, dir: Dir) -> Dir {
+		use Rotation::*;
+		use Dir::*;
+		match self {
+			Clockwise =>
+				match dir {
+					Right => Down,
+					Down  => Left,
+					Left  => Up,
+					Up    => Right,
+				}
+			CounterClockwise =>
+				match dir {
+					Right => Up,
+					Up    => Left,
+					Left  => Down,
+					Down  => Right,
+				}
+		}
+	}
 }
 
 fn init_pos(planet: &Planet) -> Pos {
@@ -269,7 +417,7 @@ fn init_pos(planet: &Planet) -> Pos {
 
 const INIT_DIR: Dir = Dir::Right;
 
-fn task1(planet: &Planet, moves: &[Move]) {
+fn task1(planet: &Planet, moves: &[Move]) -> i32 {
 	let mut astronaut = Astronaut {
 		planet,
 		curr_pos: init_pos(planet),
@@ -284,7 +432,20 @@ fn task1(planet: &Planet, moves: &[Move]) {
 		}
 	}
 
-	// TODO compute final result
+	// Compute final result
+	fn pwd_value(dir: Dir) -> i32 {
+		use Dir::*;
+		match dir {
+			Right => 0,
+			Down  => 1,
+			Left  => 2,
+			Up    => 3,
+		}
+	}
+
+	1000 * (astronaut.curr_pos.row() as i32)
+		+ 4 * (astronaut.curr_pos.column() as i32)
+		+ pwd_value(astronaut.curr_dir)
 }
 
 /* Unit tests */
@@ -293,128 +454,31 @@ fn task1(planet: &Planet, moves: &[Move]) {
 mod tests {
     use super::*;
 
-    const EXAMPLE: &str = "root: pppw + sjmn
-dbpl: 5
-cczh: sllz + lgvd
-zczc: 2
-ptdq: humn - dvpt
-dvpt: 3
-lfqf: 4
-humn: 5
-ljgn: 2
-sjmn: drzm * dbpl
-sllz: 4
-pppw: cczh / lfqf
-lgvd: ljgn * ptdq
-drzm: hmdt - zczc
-hmdt: 32";
+    const EXAMPLE: &str = "        ...#
+        .#..
+        #...
+        ....
+...#.......#
+........#...
+..#....#....
+..........#.
+        ...#....
+        .....#..
+        .#......
+        ......#.
+
+10R5L5R10L4R5L5";
 
     lazy_static! {
-        static ref EXAMPLE_PARSED: Troop = parse_test(EXAMPLE);
+        static ref EXAMPLE_PLANET: Planet =
+			parse(io::BufReader::new(EXAMPLE.as_bytes())).0;
+        static ref EXAMPLE_MOVES: Vec<Move> =
+			parse(io::BufReader::new(EXAMPLE.as_bytes())).1;
     }
-
-    fn parse_test(s: &str) -> Troop {
-		parse(io::BufReader::new(s.as_bytes()))
-	}
 
     #[test]
     fn validate_task1() {
-        assert_eq!(task1(&EXAMPLE_PARSED), 152);
-    }
-
-    #[test]
-    fn validate_task2() {
-        assert_eq!(task2(&EXAMPLE_PARSED), 301);
-    }
-
-	fn build_troop_eq1(
-		left: Option<Value>, op: BinOp, right: Option<Value>,
-		res: Value)
-		-> Troop
-    {
-		let mut troop = Troop::new();
-
-		let a_name = String::from("aaaa");
-		let b_name = String::from("bbbb");
-		let root = Monkey::Op(a_name.clone(), b_name.clone(), BinOp::Add);
-		troop.insert(String::from("root"), root);
-
-		let b = Monkey::Const(res);
-		troop.insert(b_name, b);
-
-		let humn_name = String::from("humn");
-		let c_name = String::from("cccc");
-
-		let a_left =
-			match left {
-				None    => humn_name.clone(),
-				Some(_) => c_name.clone(),
-			};
-
-		let a_right =
-			match right {
-				None    => humn_name.clone(),
-				Some(_) => c_name.clone(),
-			};
-
-		let a = Monkey::Op(a_left, a_right, op);
-		troop.insert(a_name, a);
-
-		let c = Monkey::Const(left.or(right).unwrap());
-		troop.insert(c_name, c);
-
-		let humn = Monkey::Const(0);
-		troop.insert(humn_name, humn);
-
-		return troop;
-	}
-
-    #[test]
-    fn test_eq_solver1() {
-		/* x + 3 = 5 */
-		let troop = build_troop_eq1(None, BinOp::Add, Some(3), 5);
-		/* x = 2 */
-		assert_eq!(task2(&troop), 2);
-    }
-
-    #[test]
-    fn test_eq_solver2() {
-		/* x * 2 = 8 */
-		let troop = build_troop_eq1(None, BinOp::Mul, Some(2), 8);
-		/* x = 4 */
-		assert_eq!(task2(&troop), 4);
-    }
-
-    #[test]
-    fn test_eq_solver3() {
-		/* 7 + x = 8 */
-		let troop = build_troop_eq1(Some(7), BinOp::Add, None, 8);
-		/* x = 1 */
-		assert_eq!(task2(&troop), 1);
-    }
-
-    #[test]
-    fn test_eq_solver4() {
-		/* 7 - x = 5 */
-		let troop = build_troop_eq1(Some(7), BinOp::Sub, None, 5);
-		/* x = 2 */
-		assert_eq!(task2(&troop), 2);
-    }
-
-    #[test]
-    fn test_eq_solver5() {
-		/* 7 * x = 35 */
-		let troop = build_troop_eq1(Some(7), BinOp::Mul, None, 35);
-		/* x = 5 */
-		assert_eq!(task2(&troop), 5);
-    }
-
-    #[test]
-    fn test_eq_solver6() {
-		/* 35 / x = 7 */
-		let troop = build_troop_eq1(Some(35), BinOp::Div, None, 7);
-		/* x = 5 */
-		assert_eq!(task2(&troop), 5);
+        assert_eq!(task1(&EXAMPLE_PLANET, &EXAMPLE_MOVES), 6032);
     }
 
 }
