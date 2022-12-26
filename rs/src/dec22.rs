@@ -88,6 +88,13 @@ enum Dir {
 }
 
 impl Pos {
+	fn from_row_col(row: Coord, col: Coord) -> Pos {
+		Pos {
+			x: col,
+			y: row
+		}
+	}
+
 	fn move_dir(&self, dir: Dir) -> Pos {
 		let x = self.x;
 		let y = self.y;
@@ -132,7 +139,7 @@ struct Planet {
 	terrain: HashMap<Pos, Tile>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tile {
 	Blocked,
 	Open
@@ -178,11 +185,6 @@ impl Planet {
 
 	// TODO cache all of these
 	fn max_col_on_row(&self, rowIdx: Coord) -> Coord {
-		//self.terrain
-			//.values()
-			//.filter(|p| p.row() == rowIdx)
-			//.max_by_key(|p| p.column())
-			//.unwrap()
 		self.compute_wraparound(rowIdx, true, true)
 	}
 
@@ -211,6 +213,78 @@ impl Planet {
 			.max_by_key(|z| mult * (*z as i16))
 			.unwrap()
 	}
+
+	fn is_free_at(&self, pos: Pos) -> bool {
+		self.terrain.get(&pos) == Some(&Tile::Open)
+	}
+}
+
+/* Astronaut */
+/* Someone who walks on planets */
+
+struct Astronaut<'a> {
+	planet:   &'a Planet,
+	curr_pos: Pos,
+	curr_dir: Dir
+}
+
+impl<'a> Astronaut<'a> {
+	fn walk(&mut self, steps: Coord) {
+		for _ in 0..steps {
+			let moved = self.walk_one_step();
+			if !moved {
+				break;
+			}
+		}
+	}
+
+	fn walk_one_step(&mut self) -> bool {
+		let next_pos = self.planet.next_pos_in_dir(self.curr_pos, self.curr_dir);
+		if self.planet.is_free_at(next_pos) {
+			self.curr_pos = next_pos;
+			return true;
+		}
+		else {
+			return false;
+		}
+	}
+
+	fn turn(&mut self, new_dir: Dir) {
+		self.curr_dir = new_dir;
+	}
+}
+
+/* Task 1 */
+
+enum Move {
+	Walk(Coord),
+	Turn(Dir)
+}
+
+fn init_pos(planet: &Planet) -> Pos {
+	let row = 1;
+	let col = planet.min_col_on_row(row);
+	Pos::from_row_col(row, col)
+}
+
+const INIT_DIR: Dir = Dir::Right;
+
+fn task1(planet: &Planet, moves: &[Move]) {
+	let mut astronaut = Astronaut {
+		planet,
+		curr_pos: init_pos(planet),
+		curr_dir: INIT_DIR,
+	};
+
+	for m in moves {
+		use Move::*;
+		match m {
+			Walk(steps) => astronaut.walk(*steps),
+			Turn(dir)   => astronaut.turn(*dir),
+		}
+	}
+
+	// TODO compute final result
 }
 
 /* Unit tests */
