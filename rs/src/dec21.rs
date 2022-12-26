@@ -77,7 +77,7 @@ impl FromStr for BinOp {
 
 /* BinOp */
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum BinOp {
 	Add,
 	Sub,
@@ -189,6 +189,8 @@ fn count_paths_to(curr_name: &Name, dest: &Name, troop: &Troop) -> u16 {
 }
 
 type Solver = Vec<EqStep>;
+
+#[derive(Debug)]
 struct EqStep {
 	left:  Option<Value>,
 	right: Option<Value>,
@@ -296,7 +298,7 @@ fn task2(troop: &Troop) -> Value {
 
 	let mut curr_value = val_side;
 	let mut solver = eq_side;
-	for eq_step in solver.into_iter() {
+	for eq_step in solver.into_iter().rev() {
 		let lstep = eq_step.left.unwrap_or(curr_value);
 		let rstep = eq_step.right.unwrap_or(curr_value);
 		curr_value = eq_step.op.apply(lstep, rstep);
@@ -328,9 +330,12 @@ drzm: hmdt - zczc
 hmdt: 32";
 
     lazy_static! {
-        static ref EXAMPLE_PARSED: Troop =
-            parse(io::BufReader::new(EXAMPLE.as_bytes()));
+        static ref EXAMPLE_PARSED: Troop = parse_test(EXAMPLE);
     }
+
+    fn parse_test(s: &str) -> Troop {
+		parse(io::BufReader::new(s.as_bytes()))
+	}
 
     #[test]
     fn validate_task1() {
@@ -340,6 +345,96 @@ hmdt: 32";
     #[test]
     fn validate_task2() {
         assert_eq!(task2(&EXAMPLE_PARSED), 301);
+    }
+
+	fn build_troop_eq1(
+		left: Option<Value>, op: BinOp, right: Option<Value>,
+		res: Value)
+		-> Troop
+    {
+		let mut troop = Troop::new();
+
+		let a_name = String::from("aaaa");
+		let b_name = String::from("bbbb");
+		let root = Monkey::Op(a_name.clone(), b_name.clone(), BinOp::Add);
+		troop.insert(String::from("root"), root);
+
+		let b = Monkey::Const(res);
+		troop.insert(b_name, b);
+
+		let humn_name = String::from("humn");
+		let c_name = String::from("cccc");
+
+		let a_left =
+			match left {
+				None    => humn_name.clone(),
+				Some(_) => c_name.clone(),
+			};
+
+		let a_right =
+			match right {
+				None    => humn_name.clone(),
+				Some(_) => c_name.clone(),
+			};
+
+		let a = Monkey::Op(a_left, a_right, op);
+		troop.insert(a_name, a);
+
+		let c = Monkey::Const(left.or(right).unwrap());
+		troop.insert(c_name, c);
+
+		let humn = Monkey::Const(0);
+		troop.insert(humn_name, humn);
+
+		return troop;
+	}
+
+    #[test]
+    fn test_eq_solver1() {
+		/* x + 3 = 5 */
+		let troop = build_troop_eq1(None, BinOp::Add, Some(3), 5);
+		/* x = 2 */
+		assert_eq!(task2(&troop), 2);
+    }
+
+    #[test]
+    fn test_eq_solver2() {
+		/* x * 2 = 8 */
+		let troop = build_troop_eq1(None, BinOp::Mul, Some(2), 8);
+		/* x = 4 */
+		assert_eq!(task2(&troop), 4);
+    }
+
+    #[test]
+    fn test_eq_solver3() {
+		/* 7 + x = 8 */
+		let troop = build_troop_eq1(Some(7), BinOp::Add, None, 8);
+		/* x = 1 */
+		assert_eq!(task2(&troop), 1);
+    }
+
+    #[test]
+    fn test_eq_solver4() {
+		/* 7 - x = 5 */
+		let troop = build_troop_eq1(Some(7), BinOp::Sub, None, 5);
+		/* x = 2 */
+		assert_eq!(task2(&troop), 2);
+    }
+
+    #[test]
+    fn test_eq_solver5() {
+		/* 7 * x = 35 */
+		let troop = build_troop_eq1(Some(7), BinOp::Mul, None, 35);
+		/* x = 5 */
+		assert_eq!(task2(&troop), 5);
+    }
+
+    #[test]
+    fn test_eq_solver6() {
+		/* 35 / x = 7 */
+		let troop = build_troop_eq1(Some(35), BinOp::Div, None, 7);
+		/* x = 5 */
+		assert_eq!(task2(&troop), 5);
     }
 
 }

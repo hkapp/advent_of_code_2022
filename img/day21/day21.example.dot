@@ -1,0 +1,42 @@
+digraph G {
+	root [label="+", xlabel="root"]
+	root -> pppw
+	root -> sjmn
+
+	dbpl [label=5, xlabel="dbpl"]
+
+	cczh [label="+", xlabel="cczh"]
+	cczh -> sllz
+	cczh -> lgvd
+
+	zczc [label=2, xlabel="zczc"]
+
+	ptdq [label="-", xlabel="ptdq"]
+	ptdq -> humn
+	ptdq -> dvpt
+
+	dvpt [label=3, xlabel="dvpt"]
+	lfqf [label=4, xlabel="lfqf"]
+	humn [label=5, xlabel="humn"]
+	ljgn [label=2, xlabel="ljgn"]
+
+	sjmn [label="*", xlabel="sjmn"]
+	sjmn -> drzm
+	sjmn -> dbpl
+
+	sllz [label=4, xlabel="sllz"]
+
+	pppw [label="/", xlabel="pppw"]
+	pppw -> cczh
+	pppw -> lfqf
+
+	lgvd [label="*", xlabel="lgvd"]
+	lgvd -> ljgn
+	lgvd -> ptdq
+
+	drzm [label="-", xlabel="drzm"]
+	drzm -> hmdt
+	drzm -> zczc
+
+	hmdt [label=32, xlabel="hmdt"]
+}
