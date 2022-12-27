@@ -19,12 +19,12 @@ pub fn run(file_content: Input<File>) {
 
 /* Parsing */
 
-fn parse<T: io::Read>(file_content: Input<T>) -> (Planet, Vec<Move>) {
+fn parse<T: io::Read>(file_content: Input<T>) -> (MapProjection, Vec<Move>) {
     let mut line_iter = file_content.lines();
 
     // Parse the planet
     let mut curr_row = 1;
-    let mut planet = Planet::empty();
+    let mut map_proj = MapProjection::new();
 
     while let Some(line_res) = line_iter.next() {
 		let line = line_res.unwrap();
@@ -34,7 +34,7 @@ fn parse<T: io::Read>(file_content: Input<T>) -> (Planet, Vec<Move>) {
 			break;
 		}
 
-		parse_planet_row(&mut planet, line, curr_row);
+		parse_map_proj_row(&mut map_proj, line, curr_row);
 		curr_row += 1;
 	}
 
@@ -51,7 +51,7 @@ fn parse<T: io::Read>(file_content: Input<T>) -> (Planet, Vec<Move>) {
 		moves.push(m);
 	}
 
-	return (planet, moves);
+	return (map_proj, moves);
 }
 
 impl FromStr for Rotation {
@@ -160,21 +160,21 @@ impl<'a, T, P> Iterator for Segregate<'a, T, P>
 	}
 }
 
-fn parse_planet_row(planet: &mut Planet, row_str: String, row_idx: Coord) {
+fn parse_map_proj_row(map_proj: &mut MapProjection, row_str: String, row_idx: Coord) {
 	let mut curr_col = 1;
 	for c in row_str.chars() {
 		let curr_pos = Pos::from_row_col(row_idx, curr_col);
 		match c {
 			' ' => {},
-			'.' => { planet.terrain.insert(curr_pos, Tile::Open); },
-			'#' => { planet.terrain.insert(curr_pos, Tile::Blocked); },
+			'.' => { map_proj.insert(curr_pos, Tile::Open); },
+			'#' => { map_proj.insert(curr_pos, Tile::Blocked); },
 			_   => { panic!("Unknown tile: {:?}", c); },
 		}
 		curr_col += 1;
 	}
 }
 
-/* Coordinate system */
+/* Map projection: 2D coordinate system */
 
 /*
   1--x-->
@@ -195,7 +195,7 @@ struct Pos {
 	y: Coord
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Dir {
 	Left, Right, Up, Down
 }
@@ -244,13 +244,15 @@ impl Pos {
 	}
 }
 
+type MapProjection = HashMap<Pos, Tile>;
+
 /* Planet */
 /* A planet is an object we can walk on
  * Going in the same direction eventually comes back around
  */
-// Note: we could turn the HashMap into a bitset
-struct Planet {
-	terrain: HashMap<Pos, Tile>,
+struct Planet<'a, S> {
+	terrain_2d: &'a MapProjection,
+	shape_3d:   S
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -259,95 +261,43 @@ enum Tile {
 	Open
 }
 
-impl Planet {
-	fn empty() -> Self {
-		Planet {
-			terrain: HashMap::new()
-		}
+impl<'a, S> Planet<'a, S> {
+	fn is_free_at(&self, pos: Pos) -> bool {
+		self.terrain_2d.get(&pos) == Some(&Tile::Open)
 	}
+}
 
-	fn next_pos_in_dir(&self, curr_pos: Pos, dir: Dir) -> Pos {
-		let unchecked = curr_pos.move_dir(dir);
-		if !self.terrain.contains_key(&unchecked) {
+impl <'a, S: Shape> Planet<'a, S> {
+	fn next_pos_in_dir(&self, curr_pos: Pos, dir: Dir) -> (Pos, Dir) {
+		let unchecked_new_pos = curr_pos.move_dir(dir);
+		if !self.terrain_2d.contains_key(&unchecked_new_pos) {
 			// Need to wrap around
-			assert!(self.terrain.contains_key(&curr_pos));
-			self.wrap_around(unchecked, dir)
+			assert!(self.terrain_2d.contains_key(&curr_pos));
+			self.shape_3d.wrap_around(curr_pos, dir, &self.terrain_2d)
 		}
 		else {
 			// No need to wrap around
-			unchecked
+			(unchecked_new_pos, dir)
 		}
-	}
-
-	fn wrap_around(&self, pos: Pos, dir: Dir) -> Pos {
-		use Dir::*;
-		match dir {
-			Left  => {
-				/* New column is the maximum column for this row */
-				let new_col = self.max_col_on_row(pos.row());
-				pos.with_column(new_col)
-			}
-			Right => {
-				let new_col = self.min_col_on_row(pos.row());
-				pos.with_column(new_col)
-			}
-			Up => {
-				let new_row = self.max_row_on_col(pos.column());
-				pos.with_row(new_row)
-			}
-			Down => {
-				let new_row = self.min_row_on_col(pos.column());
-				pos.with_row(new_row)
-			}
-		}
-	}
-
-	// TODO cache all of these
-	fn max_col_on_row(&self, row_idx: Coord) -> Coord {
-		self.compute_wraparound(row_idx, true, true)
-	}
-
-	fn min_col_on_row(&self, row_idx: Coord) -> Coord {
-		self.compute_wraparound(row_idx, true, false)
-	}
-
-	fn max_row_on_col(&self, col_idx: Coord) -> Coord {
-		self.compute_wraparound(col_idx, false, true)
-	}
-
-	fn min_row_on_col(&self, col_idx: Coord) -> Coord {
-		self.compute_wraparound(col_idx, false, false)
-	}
-
-	fn compute_wraparound(&self, idx: Coord, on_rows: bool, do_max: bool) -> Coord {
-		let fixed_part  = |p: &Pos| if on_rows { p.row() } else { p.column() };
-		let moving_part = |p: &Pos| if on_rows { p.column() } else { p.row() };
-
-		let mult = if do_max { 1 } else { -1 };
-
-		self.terrain
-			.keys()
-			.filter(|p| fixed_part(p) == idx)
-			.map(|p| moving_part(p))
-			.max_by_key(|z| mult * (*z as i16))
-			.unwrap()
-	}
-
-	fn is_free_at(&self, pos: Pos) -> bool {
-		self.terrain.get(&pos) == Some(&Tile::Open)
 	}
 }
 
 /* Astronaut */
 /* Someone who walks on planets */
 
-struct Astronaut<'a> {
-	planet:   &'a Planet,
+struct Astronaut<'a, S> {
+	planet:   Planet<'a, S>,
 	curr_pos: Pos,
 	curr_dir: Dir
 }
 
-impl<'a> Astronaut<'a> {
+impl<'a, S> Astronaut<'a, S> {
+	fn turn(&mut self, rotation: Rotation) {
+		self.curr_dir = rotation.apply_to(self.curr_dir);
+	}
+}
+
+impl<'a, S: Shape> Astronaut<'a, S> {
 	fn walk(&mut self, steps: Coord) {
 		for _ in 0..steps {
 			let moved = self.walk_one_step();
@@ -358,18 +308,56 @@ impl<'a> Astronaut<'a> {
 	}
 
 	fn walk_one_step(&mut self) -> bool {
-		let next_pos = self.planet.next_pos_in_dir(self.curr_pos, self.curr_dir);
+		let (next_pos, next_dir) =
+			self.planet.next_pos_in_dir(self.curr_pos, self.curr_dir);
+
 		if self.planet.is_free_at(next_pos) {
 			self.curr_pos = next_pos;
+			self.curr_dir = next_dir;
 			return true;
 		}
 		else {
 			return false;
 		}
 	}
+}
 
-	fn turn(&mut self, rotation: Rotation) {
-		self.curr_dir = rotation.apply_to(self.curr_dir);
+/* 3D Shape */
+
+trait Shape {
+	fn wrap_around(&self, pos: Pos, dir: Dir, map_projection: &MapProjection) -> (Pos, Dir);
+}
+
+struct Torus();
+
+impl Shape for Torus {
+
+	fn wrap_around(&self, pos: Pos, dir: Dir, map_projection: &MapProjection) -> (Pos, Dir) {
+		/* To wrap around, one coordinate remains fixed and one will change. */
+		use Dir::*;
+
+		/* The coordinate that remains fixed depends on the direction */
+		let fixed_row = (dir == Left) || (dir == Right);
+		let fixed_part  = |p: &Pos| if fixed_row { p.row() } else { p.column() };
+		let moving_part = |p: &Pos| if fixed_row { p.column() } else { p.row() };
+		let const_coord = fixed_part(&pos);
+
+		/* The moving coordinate becomes either min or max, depending on the dir */
+		let do_max = (dir == Left) || (dir == Up);
+		let mult = if do_max { 1 } else { -1 };
+
+		let new_moving =
+			map_projection
+				.keys()
+				.filter(|p| fixed_part(p) == const_coord)
+				.map(|p| moving_part(p))
+				.max_by_key(|z| mult * (*z as i16))
+				.unwrap();
+
+		let new_pos = if fixed_row { pos.with_column(new_moving) }
+					  else { pos.with_row(new_moving) };
+
+		(new_pos, dir)
 	}
 }
 
@@ -409,18 +397,27 @@ impl Rotation {
 	}
 }
 
-fn init_pos(planet: &Planet) -> Pos {
+fn init_pos(map_proj: &MapProjection) -> Pos {
 	let row = 1;
-	let col = planet.min_col_on_row(row);
+	let col = map_proj.keys()
+				.filter(|p| p.row() == row)
+				.map(Pos::column)
+				.min()
+				.unwrap();
 	Pos::from_row_col(row, col)
 }
 
 const INIT_DIR: Dir = Dir::Right;
 
-fn task1(planet: &Planet, moves: &[Move]) -> i32 {
+fn task1(map_proj: &MapProjection, moves: &[Move]) -> i32 {
+	let planet = Planet {
+		terrain_2d: map_proj,
+		shape_3d:   Torus(),
+	};
+
 	let mut astronaut = Astronaut {
 		planet,
-		curr_pos: init_pos(planet),
+		curr_pos: init_pos(map_proj),
 		curr_dir: INIT_DIR,
 	};
 
