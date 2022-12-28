@@ -445,6 +445,135 @@ fn task1(map_proj: &MapProjection, moves: &[Move]) -> i32 {
 		+ pwd_value(astronaut.curr_dir)
 }
 
+/* Cube */
+
+struct Cube {
+	face_corners: Corners,
+}
+
+impl Cube {
+	fn new(side_len: Coord) -> Self {
+		Cube {
+			face_corners: build_face_corners(side_len),
+		}
+	}
+}
+
+/*
+                 +-----+<---1
+                 |     |
+                 |  1  |
+                 |     |
+   +-----++-----++-----+<---l
+   +-----++-----++-----+<---l+1
+   |     ||     ||     |
+   |  2  ||  3  ||  4  |
+   |     ||     ||     |
+   +-----++-----++-----++-----+<---2l
+   +-----++-----++-----++-----+<---2l+1
+   ^     ^^     ^|     ||     |
+   |     ||     ||  5  ||  6  |
+   1     l|     ||     ||     |
+          |     |+-----++-----+<---3l
+         l+1    |^     ^^     ^
+               2l|     ||     |
+                 |     ||     4l
+              2l+1    3l|
+                        3l+1
+*/
+
+const NUM_FACES: usize = 6;
+type Corners = [(Pos, Pos); NUM_FACES];
+
+fn build_face_corners(side_len: Coord) -> Corners {
+	let corners_row_col = |proj_row: Coord, proj_col: Coord| {
+		let top_row = (proj_row - 1) * side_len + 1;
+		let bot_row = proj_row * side_len;
+
+		let left_col = (proj_col - 1) * side_len + 1;
+		let right_col = proj_col * side_len;
+
+		(Pos::from_row_col(top_row, left_col),
+		Pos::from_row_col(bot_row, right_col))
+	};
+
+	[
+		/*1*/ corners_row_col(1, 3),
+		/*2*/ corners_row_col(2, 1),
+		/*3*/ corners_row_col(2, 2),
+		/*4*/ corners_row_col(2, 3),
+		/*5*/ corners_row_col(3, 3),
+		/*6*/ corners_row_col(3, 4),
+	]
+}
+
+type Face = u8;
+
+fn belongs_to_face(face_corners: &(Pos, Pos), pos: Pos) -> bool {
+	pos.row() >= face_corners.0.row()
+	&& pos.row() <= face_corners.1.row()
+	&& pos.column() >= face_corners.0.column()
+	&& pos.column() <= face_corners.1.column()
+}
+
+fn identify_face(cube: &Cube, pos: Pos) -> Face {
+	cube.face_corners
+		.iter()
+		.enumerate()
+		.find(|(_idx, c)| belongs_to_face(c, pos))
+		.map(|(idx, _c)| idx as Face + 1)
+		.unwrap()
+}
+
+/*
+         +-------------+
+         :             :
+         : +---------+ :
+         : :         : :
+         : :       +-^-V-+
+         : :   +--->     >-----------+
+         : :   :   |  1  |           :
+         : :   : +-<     <--------+  :
+       +-^-V-+-^-V-+-^-V-+        :  :
+ +----->     >     >     >---+    :  :
+ :     |  2  |  3  |  4  |   :    :  :
+ :  +--<     <     <     <-+ :    :  :
+ :  :  +-^-V-+-^-V-+-^-V-+-^-V-+  :  :
+ :  :    : :   : +->     >     >--+  :
+ :  :    : :   :   |  5  |  6  |     :
+ :  :    : :   +---<     <     <-----+
+ :  :    : :       +-^-V-+-^-V-+
+ :  :    : :         : :   : :
+ :  :    : +---------+ :   : :
+ :  :    :             :   : :
+ :  :    +-------------+   : :
+ :  :                      : :
+ :  +----------------------+ :
+ :                           :
+ +---------------------------+
+*/
+
+/*
+ When    |      Up        |      Down      |      Left      |      Right     |
+ exiting | Go to | Rotate | Go to | Rotate | Go to | Rotate | Go to | Rotate |
+---------+----------------+----------------+----------------+----------------+
+   1     |   2       2x   |   4       No   |   3       KW   |   6       x2   |
+   2     |   1       2x   |   5       x2   |   6       CW   |   3       No   |
+   3     |   1       CW   |   5       KW   |   2       No   |   4       No   |
+   4     |   1       No   |   5       No   |   3       No   |   6       CW   |
+   5     |   4       No   |   2       x2   |   3       CW   |   6       No   |
+   6     |   4       KW   |   2       KW   |   5       No   |   1       x2   |
+
+Legend:
+  No: don't rotate
+  CW: clockwise
+  KW: counter-clockwise
+  2x: full turn
+
+  Note that rotating requires changing the facing direction
+  but also the coordinates when entering the new face.
+*/
+
 /* Unit tests */
 
 #[cfg(test)]
