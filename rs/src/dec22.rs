@@ -163,7 +163,7 @@ impl<'a, T, P> Iterator for Segregate<'a, T, P>
 fn parse_map_proj_row(map_proj: &mut MapProjection, row_str: String, row_idx: Coord) {
 	let mut curr_col = 1;
 	for c in row_str.chars() {
-		let curr_pos = Pos::from_row_col(row_idx, curr_col);
+		let curr_pos = Pos { row: row_idx, column: curr_col };
 		match c {
 			' ' => {},
 			'.' => { map_proj.insert(curr_pos, Tile::Open); },
@@ -177,69 +177,52 @@ fn parse_map_proj_row(map_proj: &mut MapProjection, row_str: String, row_idx: Co
 /* Map projection: 2D coordinate system */
 
 /*
-  1--x-->
+  1--c-->
   |
-  y
+  r
   |
   V
 */
 
-/* Note: both coordinates start at 1
- * So doing Coord - 1 is always ok, as long as we check for wrap around immediately
- */
-type Coord = u16;
+// Note: we use unsigned for easy arithmetics
+type Coord = i16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Pos {
-	x: Coord,
-	y: Coord
+	row:    Coord,
+	column: Coord
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Dir {
 	Left, Right, Up, Down
 }
 use Dir::*;
 
 impl Pos {
-	fn from_row_col(row: Coord, col: Coord) -> Pos {
-		Pos {
-			x: col,
-			y: row
-		}
-	}
-
 	fn move_dir(&self, dir: Dir) -> Pos {
-		let x = self.x;
-		let y = self.y;
+		let row    = self.row;
+		let column = self.column;
 
 		match dir {
-			Left  => Pos { x: x-1, y },
-			Right => Pos { x: x+1, y },
-			Up    => Pos { x, y: y-1 },
-			Down  => Pos { x, y: y+1 },
+			Left  => Pos { column: column-1, row },
+			Right => Pos { column: column+1, row },
+			Up    => Pos { column,    row: row-1 },
+			Down  => Pos { column,    row: row+1 },
 		}
-	}
-
-	fn column(&self) -> Coord {
-		self.x
-	}
-
-	fn row(&self) -> Coord {
-		self.y
 	}
 
 	fn with_column(&self, new_col: Coord) -> Pos {
 		Pos {
-			x: new_col,
-			y: self.y
+			column: new_col,
+			row:    self.row
 		}
 	}
 
 	fn with_row(&self, new_row: Coord) -> Pos {
 		Pos {
-			x: self.x,
-			y: new_row
+			row:    new_row,
+			column: self.column
 		}
 	}
 }
@@ -273,7 +256,7 @@ impl <'a, S: Shape> Planet<'a, S> {
 		if !self.terrain_2d.contains_key(&unchecked_new_pos) {
 			// Need to wrap around
 			assert!(self.terrain_2d.contains_key(&curr_pos));
-			self.shape_3d.wrap_around(curr_pos, dir, &self.terrain_2d)
+			self.shape_3d.wrap_around(curr_pos, dir)
 		}
 		else {
 			// No need to wrap around
@@ -325,21 +308,23 @@ impl<'a, S: Shape> Astronaut<'a, S> {
 /* 3D Shape */
 
 trait Shape {
-	fn wrap_around(&self, pos: Pos, dir: Dir, map_projection: &MapProjection) -> (Pos, Dir);
+	fn wrap_around(&self, pos: Pos, dir: Dir) -> (Pos, Dir);
 }
 
-struct Torus();
+struct Torus<'a> {
+	map_projection: &'a MapProjection
+}
 
-impl Shape for Torus {
+impl<'a> Shape for Torus<'a> {
 
-	fn wrap_around(&self, pos: Pos, dir: Dir, map_projection: &MapProjection) -> (Pos, Dir) {
+	fn wrap_around(&self, pos: Pos, dir: Dir) -> (Pos, Dir) {
 		/* To wrap around, one coordinate remains fixed and one will change. */
 		use Dir::*;
 
 		/* The coordinate that remains fixed depends on the direction */
 		let fixed_row = (dir == Left) || (dir == Right);
-		let fixed_part  = |p: &Pos| if fixed_row { p.row() } else { p.column() };
-		let moving_part = |p: &Pos| if fixed_row { p.column() } else { p.row() };
+		let fixed_part  = |p: &Pos| if fixed_row { p.row } else { p.column };
+		let moving_part = |p: &Pos| if fixed_row { p.column } else { p.row };
 		let const_coord = fixed_part(&pos);
 
 		/* The moving coordinate becomes either min or max, depending on the dir */
@@ -347,7 +332,7 @@ impl Shape for Torus {
 		let mult = if do_max { 1 } else { -1 };
 
 		let new_moving =
-			map_projection
+			self.map_projection
 				.keys()
 				.filter(|p| fixed_part(p) == const_coord)
 				.map(|p| moving_part(p))
@@ -400,19 +385,19 @@ impl Rotation {
 fn init_pos(map_proj: &MapProjection) -> Pos {
 	let row = 1;
 	let col = map_proj.keys()
-				.filter(|p| p.row() == row)
-				.map(Pos::column)
+				.filter(|p| p.row == row)
+				.map(|p| p.column)
 				.min()
 				.unwrap();
-	Pos::from_row_col(row, col)
+	Pos { row: row, column: col }
 }
 
 const INIT_DIR: Dir = Dir::Right;
 
-fn task1(map_proj: &MapProjection, moves: &[Move]) -> i32 {
+fn find_password<S: Shape>(map_proj: &MapProjection, shape: S, moves: &[Move]) -> i32 {
 	let planet = Planet {
 		terrain_2d: map_proj,
-		shape_3d:   Torus(),
+		shape_3d:   shape,
 	};
 
 	let mut astronaut = Astronaut {
@@ -440,22 +425,34 @@ fn task1(map_proj: &MapProjection, moves: &[Move]) -> i32 {
 		}
 	}
 
-	1000 * (astronaut.curr_pos.row() as i32)
-		+ 4 * (astronaut.curr_pos.column() as i32)
+	1000 * (astronaut.curr_pos.row as i32)
+		+ 4 * (astronaut.curr_pos.column as i32)
 		+ pwd_value(astronaut.curr_dir)
+}
+
+fn task1(map_proj: &MapProjection, moves: &[Move]) -> i32 {
+	find_password(map_proj,
+		Torus { map_projection: map_proj },
+		moves)
 }
 
 /* Cube */
 
 struct Cube {
-	face_corners: Corners,
+	faces: CubeFaces,
+	edges: HashMap<(FaceId, Dir), Edge>
 }
 
 impl Cube {
 	fn new(side_len: Coord) -> Self {
 		Cube {
-			face_corners: build_face_corners(side_len),
+			faces: build_face_corners(side_len),
+			edges: build_edges()
 		}
+	}
+
+	fn get_face(&self, face_id: FaceId) -> &Face {
+		&self.faces[face_id as usize - 1]
 	}
 }
 
@@ -483,9 +480,9 @@ impl Cube {
 */
 
 const NUM_FACES: usize = 6;
-type Corners = [(Pos, Pos); NUM_FACES];
+type CubeFaces = [Face; NUM_FACES];
 
-fn build_face_corners(side_len: Coord) -> Corners {
+fn build_face_corners(side_len: Coord) -> CubeFaces {
 	let corners_row_col = |proj_row: Coord, proj_col: Coord| {
 		let top_row = (proj_row - 1) * side_len + 1;
 		let bot_row = proj_row * side_len;
@@ -493,8 +490,7 @@ fn build_face_corners(side_len: Coord) -> Corners {
 		let left_col = (proj_col - 1) * side_len + 1;
 		let right_col = proj_col * side_len;
 
-		(Pos::from_row_col(top_row, left_col),
-		Pos::from_row_col(bot_row, right_col))
+		Face { left_col, right_col, top_row, bot_row }
 	};
 
 	[
@@ -507,22 +503,27 @@ fn build_face_corners(side_len: Coord) -> Corners {
 	]
 }
 
-type Face = u8;
-
-fn belongs_to_face(face_corners: &(Pos, Pos), pos: Pos) -> bool {
-	pos.row() >= face_corners.0.row()
-	&& pos.row() <= face_corners.1.row()
-	&& pos.column() >= face_corners.0.column()
-	&& pos.column() <= face_corners.1.column()
+type FaceId = u8;
+struct Face {
+	left_col:  Coord,
+	right_col: Coord,
+	top_row:   Coord,
+	bot_row:   Coord,
 }
 
-fn identify_face(cube: &Cube, pos: Pos) -> Face {
-	cube.face_corners
+fn belongs_to_face(face: &Face, pos: Pos) -> bool {
+	pos.row >= face.top_row
+	&& pos.row <= face.bot_row
+	&& pos.column >= face.left_col
+	&& pos.column <= face.right_col
+}
+
+fn identify_face(cube: &Cube, pos: Pos) -> Option<FaceId> {
+	cube.faces
 		.iter()
 		.enumerate()
 		.find(|(_idx, c)| belongs_to_face(c, pos))
-		.map(|(idx, _c)| idx as Face + 1)
-		.unwrap()
+		.map(|(idx, _c)| idx as FaceId + 1)
 }
 
 /*
@@ -557,8 +558,8 @@ fn identify_face(cube: &Cube, pos: Pos) -> Face {
  When    |      Up        |      Down      |      Left      |      Right     |
  exiting | Go to | Rotate | Go to | Rotate | Go to | Rotate | Go to | Rotate |
 ---------+----------------+----------------+----------------+----------------+
-   1     |   2       2x   |   4       No   |   3       KW   |   6       x2   |
-   2     |   1       2x   |   5       x2   |   6       CW   |   3       No   |
+   1     |   2       x2   |   4       No   |   3       KW   |   6       x2   |
+   2     |   1       x2   |   5       x2   |   6       CW   |   3       No   |
    3     |   1       CW   |   5       KW   |   2       No   |   4       No   |
    4     |   1       No   |   5       No   |   3       No   |   6       CW   |
    5     |   4       No   |   2       x2   |   3       CW   |   6       No   |
@@ -573,6 +574,215 @@ Legend:
   Note that rotating requires changing the facing direction
   but also the coordinates when entering the new face.
 */
+
+struct Edge {
+	destination: FaceId,
+	rotation:    Vec<Rotation>
+}
+
+type CubeEdges = HashMap<(FaceId, Dir), Edge>;
+
+// TODO we could turn this into a lazy const
+fn build_edges() -> CubeEdges {
+	use Rotation::*;
+	HashMap::from(
+		[
+			// 1     |   2       x2   |   4       No   |   3       KW   |   6       x2   |
+			((1, Up),    Edge { destination: 2, rotation: vec![Clockwise, Clockwise] }),
+			((1, Down),  Edge { destination: 4, rotation: vec![] }),
+			((1, Left),  Edge { destination: 3, rotation: vec![CounterClockwise] }),
+			((1, Right), Edge { destination: 6, rotation: vec![Clockwise, Clockwise] }),
+			// 2     |   1       x2   |   5       x2   |   6       CW   |   3       No   |
+			((2, Up),    Edge { destination: 1, rotation: vec![Clockwise, Clockwise] }),
+			((2, Down),  Edge { destination: 5, rotation: vec![Clockwise, Clockwise] }),
+			((2, Left),  Edge { destination: 6, rotation: vec![Clockwise] }),
+			((2, Right), Edge { destination: 3, rotation: vec![] }),
+			// 3     |   1       CW   |   5       KW   |   2       No   |   4       No   |
+			((3, Up),    Edge { destination: 1, rotation: vec![Clockwise] }),
+			((3, Down),  Edge { destination: 5, rotation: vec![CounterClockwise] }),
+			((3, Left),  Edge { destination: 2, rotation: vec![] }),
+			((3, Right), Edge { destination: 4, rotation: vec![] }),
+			// 4     |   1       No   |   5       No   |   3       No   |   6       CW   |
+			((4, Up),    Edge { destination: 1, rotation: vec![] }),
+			((4, Down),  Edge { destination: 5, rotation: vec![] }),
+			((4, Left),  Edge { destination: 3, rotation: vec![] }),
+			((4, Right), Edge { destination: 6, rotation: vec![Clockwise] }),
+			// 5     |   4       No   |   2       x2   |   3       CW   |   6       No   |
+			((5, Up),    Edge { destination: 4, rotation: vec![] }),
+			((5, Down),  Edge { destination: 2, rotation: vec![Clockwise, Clockwise] }),
+			((5, Left),  Edge { destination: 3, rotation: vec![Clockwise] }),
+			((5, Right), Edge { destination: 6, rotation: vec![] }),
+			// 6     |   4       KW   |   2       KW   |   5       No   |   1       x2   |
+			((6, Up),    Edge { destination: 4, rotation: vec![CounterClockwise] }),
+			((6, Down),  Edge { destination: 2, rotation: vec![CounterClockwise] }),
+			((6, Left),  Edge { destination: 5, rotation: vec![] }),
+			((6, Right), Edge { destination: 1, rotation: vec![Clockwise, Clockwise] }),
+		]
+	)
+}
+
+fn rotate_within_face(curr_face: &Face, pos: Pos, rotation: Rotation) -> Pos {
+	// Note: at most two can be true at a time (if pos is one a corner)
+	let on_top_row = pos.row == curr_face.top_row;
+	let on_bot_row = pos.row == curr_face.bot_row;
+	let on_left_col  = pos.column == curr_face.left_col;
+	let on_right_col = pos.column == curr_face.right_col;
+
+	use Rotation::*;
+	match rotation {
+		Clockwise => {
+			/* +--1+
+			 * 4   |
+			 * |   2
+			 * +3--+
+			 */
+			if on_top_row {
+				/* 1 -> 2 */
+				Pos {
+					row:    (curr_face.right_col - pos.column) + curr_face.top_row,
+					column: curr_face.right_col
+				}
+			}
+			else if on_right_col {
+				/* 2 -> 3 */
+				Pos {
+					row:    curr_face.bot_row,
+					column: curr_face.left_col + (curr_face.bot_row - pos.row)
+				}
+			}
+			else if on_bot_row {
+				/* 3 -> 4 */
+				Pos {
+					row:    curr_face.top_row + (curr_face.left_col - pos.column),
+					column: curr_face.left_col
+				}
+			}
+			else if on_left_col {
+				/* 4 -> 1 */
+				Pos {
+					row:    curr_face.top_row,
+					column: curr_face.left_col + (curr_face.top_row - pos.row)
+				}
+			}
+			else {
+				unreachable!()
+			}
+		}
+		CounterClockwise => {
+			/* +--1+
+			 * 2   |
+			 * |   4
+			 * +3--+
+			 */
+			if on_top_row {
+				/* 1 -> 2 */
+				Pos {
+					row:    (curr_face.right_col - pos.column) + curr_face.top_row,
+					column: curr_face.left_col
+				}
+			}
+			else if on_left_col {
+				/* 2 -> 3 */
+				Pos {
+					row:    curr_face.bot_row,
+					column: curr_face.left_col + (curr_face.top_row - pos.row)
+				}
+			}
+			else if on_bot_row {
+				/* 3 -> 4 */
+				Pos {
+					row:    curr_face.top_row + (curr_face.right_col - pos.column),
+					column: curr_face.right_col
+				}
+			}
+			else if on_right_col {
+				/* 4 -> 1 */
+				Pos {
+					row:    curr_face.top_row,
+					column: curr_face.left_col + (curr_face.top_row - pos.row)
+				}
+			}
+			else {
+				unreachable!()
+			}
+		}
+	}
+}
+
+fn cross_edge(
+	cube:      &Cube,
+	edge:      &Edge,
+	prev_face: &Face,
+	prev_pos:   Pos,
+	prev_dir:   Dir)
+	-> (Pos, Dir)
+{
+	/* What do we need to do?
+	 * Rotate the direction
+	 * Compute the new position
+	 * 	Compute the position in the previous face
+	 *  Rotate that position within the face
+	 *  Move the new point to the new face
+	 */
+	let mut new_pos = prev_pos;
+	let mut new_dir = prev_dir;
+	for rotation in edge.rotation.iter() {
+		new_dir = rotation.apply_to(new_dir);
+		new_pos = rotate_within_face(prev_face, new_pos, *rotation);
+	}
+	// Translate the point to the new face
+	// Take into account the step we're making
+	let new_face = cube.get_face(edge.destination);
+	new_pos = enter_face(new_pos, new_dir, prev_face, new_face);
+	(new_pos, new_dir)
+}
+
+fn enter_face(pos: Pos, dir: Dir, prev_face: &Face, new_face: &Face) -> Pos {
+	/*     +-3---+
+	       |     4
+	       2     |
+	 +----1+----1+
+	 4<   ^|
+	 | V  >2
+	 +-3---+
+	 */
+	match dir {
+		Up => Pos {
+			row:    new_face.bot_row,
+			column: pos.column - prev_face.left_col + new_face.left_col
+		},
+		Right => Pos {
+			column: new_face.left_col,
+			row:    pos.row - prev_face.top_row + new_face.top_row
+		},
+		Down => Pos {
+			row:    new_face.top_row,
+			column: pos.column - prev_face.left_col + new_face.left_col
+		},
+		Left => Pos {
+			column: new_face.right_col,
+			row:    pos.row - prev_face.top_row + new_face.top_row
+		}
+	}
+}
+
+impl Shape for Cube {
+	fn wrap_around(&self, pos: Pos, dir: Dir) -> (Pos, Dir) {
+		let curr_face = identify_face(&self, pos).unwrap();
+		let edge = self.edges.get(&(curr_face, dir)).unwrap();
+		cross_edge(&self, edge, self.get_face(curr_face), pos, dir)
+	}
+}
+
+/* Task 2 */
+
+fn task2_param(map_proj: &MapProjection, cube_side_len: Coord, moves: &[Move]) -> i32 {
+	find_password(map_proj, Cube::new(cube_side_len), moves)
+}
+
+fn task2(map_proj: &MapProjection, moves: &[Move]) -> i32 {
+	task2_param(map_proj, 50, moves)
+}
 
 /* Unit tests */
 
@@ -596,7 +806,7 @@ mod tests {
 10R5L5R10L4R5L5";
 
     lazy_static! {
-        static ref EXAMPLE_PLANET: Planet =
+        static ref EXAMPLE_PLANET: MapProjection =
 			parse(io::BufReader::new(EXAMPLE.as_bytes())).0;
         static ref EXAMPLE_MOVES: Vec<Move> =
 			parse(io::BufReader::new(EXAMPLE.as_bytes())).1;
@@ -605,6 +815,11 @@ mod tests {
     #[test]
     fn validate_task1() {
         assert_eq!(task1(&EXAMPLE_PLANET, &EXAMPLE_MOVES), 6032);
+    }
+
+    #[test]
+    fn validate_task2() {
+        assert_eq!(task2_param(&EXAMPLE_PLANET, 4, &EXAMPLE_MOVES), 5031);
     }
 
 }
