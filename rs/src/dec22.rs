@@ -6,14 +6,14 @@ use std::str::FromStr;
 type Input<T> = io::BufReader<T>;
 
 pub fn run(file_content: Input<File>) {
-    let (planet, moves) = parse(file_content);
+    let (map_proj, moves) = parse(file_content);
 
-    let res1 = task1(&planet, &moves);
+    let res1 = task1(&map_proj, &moves);
     println!("Task 1: {}", res1);
     assert_eq!(res1, 88226);
 
-    //let res2 = task2(&parsed);
-    //println!("Task 2: {}", res2);
+    let res2 = task2(&map_proj, &moves);
+    println!("Task 2: {}", res2);
     //assert_eq!(res2, 62744);
 }
 
@@ -639,7 +639,7 @@ fn rotate_within_face(curr_face: &Face, pos: Pos, rotation: Rotation) -> Pos {
 			if on_top_row {
 				/* 1 -> 2 */
 				Pos {
-					row:    (curr_face.right_col - pos.column) + curr_face.top_row,
+					row:    (pos.column - curr_face.left_col) + curr_face.top_row,
 					column: curr_face.right_col
 				}
 			}
@@ -653,7 +653,7 @@ fn rotate_within_face(curr_face: &Face, pos: Pos, rotation: Rotation) -> Pos {
 			else if on_bot_row {
 				/* 3 -> 4 */
 				Pos {
-					row:    curr_face.top_row + (curr_face.left_col - pos.column),
+					row:    curr_face.top_row + (pos.column - curr_face.left_col),
 					column: curr_face.left_col
 				}
 			}
@@ -661,7 +661,7 @@ fn rotate_within_face(curr_face: &Face, pos: Pos, rotation: Rotation) -> Pos {
 				/* 4 -> 1 */
 				Pos {
 					row:    curr_face.top_row,
-					column: curr_face.left_col + (curr_face.top_row - pos.row)
+					column: curr_face.left_col + (curr_face.bot_row - pos.row)
 				}
 			}
 			else {
@@ -685,7 +685,7 @@ fn rotate_within_face(curr_face: &Face, pos: Pos, rotation: Rotation) -> Pos {
 				/* 2 -> 3 */
 				Pos {
 					row:    curr_face.bot_row,
-					column: curr_face.left_col + (curr_face.top_row - pos.row)
+					column: curr_face.left_col + (pos.row - curr_face.top_row)
 				}
 			}
 			else if on_bot_row {
@@ -699,7 +699,7 @@ fn rotate_within_face(curr_face: &Face, pos: Pos, rotation: Rotation) -> Pos {
 				/* 4 -> 1 */
 				Pos {
 					row:    curr_face.top_row,
-					column: curr_face.left_col + (curr_face.top_row - pos.row)
+					column: curr_face.left_col + (pos.row - curr_face.top_row)
 				}
 			}
 			else {
@@ -768,8 +768,11 @@ fn enter_face(pos: Pos, dir: Dir, prev_face: &Face, new_face: &Face) -> Pos {
 
 impl Shape for Cube {
 	fn wrap_around(&self, pos: Pos, dir: Dir) -> (Pos, Dir) {
-		let curr_face = identify_face(&self, pos).unwrap();
+		let curr_face = identify_face(&self, pos)
+							.expect(&format!("Can't find the face for {:?}", pos));
 		let edge = self.edges.get(&(curr_face, dir)).unwrap();
+		// Trivial edges should never reach here
+		assert!(!edge.rotation.is_empty());
 		cross_edge(&self, edge, self.get_face(curr_face), pos, dir)
 	}
 }
@@ -810,7 +813,13 @@ mod tests {
 			parse(io::BufReader::new(EXAMPLE.as_bytes())).0;
         static ref EXAMPLE_MOVES: Vec<Move> =
 			parse(io::BufReader::new(EXAMPLE.as_bytes())).1;
+
+		static ref EXAMPLE_CUBE: Cube = Cube::new(4);
     }
+	const A: Pos = Pos { row: 6, column: 12 };
+	const B: Pos = Pos { row: 9, column: 15 };
+	const C: Pos = Pos { row:12, column: 11 };
+	const D: Pos = Pos { row: 8, column:  2 };
 
     #[test]
     fn validate_task1() {
@@ -820,6 +829,86 @@ mod tests {
     #[test]
     fn validate_task2() {
         assert_eq!(task2_param(&EXAMPLE_PLANET, 4, &EXAMPLE_MOVES), 5031);
+    }
+
+    #[test]
+    fn test_cube_physics() {
+		/* Example:
+        ...#
+        .#..
+        #...
+        ....
+...#.......#
+........#..A>-+
+..#....#....  :
+.D........#.  V
+ ^      ...#..B.
+ :      .....#..
+ :      .#......
+ :      ..C...#.
+ :        V
+ +--------+
+        */
+
+        assert_eq!(
+			EXAMPLE_CUBE.wrap_around(A, Right),
+			(B, Down));
+        assert_eq!(
+			EXAMPLE_CUBE.wrap_around(C, Down),
+			(D, Up));
+    }
+
+    #[test]
+    fn test_rotate_within_face() {
+		/* Clokwise:
+           .2.#
+           ...3
+           1#..
+           ..C.
+
+           Counter-clockwise is the opposite
+        */
+        let p1 = Pos {
+			column: C.column - 2,
+			row:    C.row - 1,
+		};
+        let p2 = Pos {
+			column: C.column - 1,
+			row:    p1.row - 2,
+		};
+        let p3 = Pos {
+			column: C.column + 1,
+			row:    p2.row + 1,
+		};
+
+		let face = EXAMPLE_CUBE.get_face(identify_face(&EXAMPLE_CUBE, C).unwrap());
+		use Rotation::*;
+
+        assert_eq!(
+			rotate_within_face(face, C, Clockwise),
+			p1);
+        assert_eq!(
+			rotate_within_face(face, p1, Clockwise),
+			p2);
+        assert_eq!(
+			rotate_within_face(face, p2, Clockwise),
+			p3);
+        assert_eq!(
+			rotate_within_face(face, p3, Clockwise),
+			C);
+
+        assert_eq!(
+			rotate_within_face(face, C, CounterClockwise),
+			p3);
+        assert_eq!(
+			rotate_within_face(face, p3, CounterClockwise),
+			p2);
+        assert_eq!(
+			rotate_within_face(face, p2, CounterClockwise),
+			p1);
+        assert_eq!(
+			rotate_within_face(face, p1, CounterClockwise),
+			C);
     }
 
 }
