@@ -14,7 +14,7 @@ pub fn run(file_content: Input<File>) {
 
     let res2 = task2(&map_proj, &moves);
     println!("Task 2: {}", res2);
-    //assert_eq!(res2, 62744);
+    assert_eq!(res2, 57305);
 }
 
 /* Parsing */
@@ -444,9 +444,10 @@ struct Cube {
 }
 
 impl Cube {
-	fn new(side_len: Coord) -> Self {
+	// Warning! this creates the cube for the real input
+	fn new() -> Self {
 		Cube {
-			faces: build_face_corners(side_len),
+			faces: build_cube_faces(),
 			edges: build_edges()
 		}
 	}
@@ -482,25 +483,61 @@ impl Cube {
 const NUM_FACES: usize = 6;
 type CubeFaces = [Face; NUM_FACES];
 
-fn build_face_corners(side_len: Coord) -> CubeFaces {
-	let corners_row_col = |proj_row: Coord, proj_col: Coord| {
-		let top_row = (proj_row - 1) * side_len + 1;
-		let bot_row = proj_row * side_len;
+fn build_faces_from_layout(side_len: Coord, layout: &[Vec<Option<FaceId>>]) -> CubeFaces {
+	let mut faces = HashMap::new();
+	let mut row_idx = 1;
+	for layout_row in layout {
+		let mut col_idx = 1;
+		for layout_entry in layout_row {
+			if let Some(face_id) = layout_entry {
+				let new_face = Face {
+					left_col:  col_idx,
+					right_col: col_idx + side_len - 1,
+					top_row:   row_idx,
+					bot_row:   row_idx + side_len - 1,
+				};
+				faces.insert(face_id, new_face);
+			}
+			col_idx += side_len;
+		}
 
-		let left_col = (proj_col - 1) * side_len + 1;
-		let right_col = proj_col * side_len;
+		row_idx += side_len;
+	}
 
-		Face { left_col, right_col, top_row, bot_row }
+	let mut remap = |n: FaceId| {
+		faces.remove(&n).unwrap()
 	};
 
 	[
-		/*1*/ corners_row_col(1, 3),
-		/*2*/ corners_row_col(2, 1),
-		/*3*/ corners_row_col(2, 2),
-		/*4*/ corners_row_col(2, 3),
-		/*5*/ corners_row_col(3, 3),
-		/*6*/ corners_row_col(3, 4),
+		remap(1),
+		remap(2),
+		remap(3),
+		remap(4),
+		remap(5),
+		remap(6),
 	]
+}
+
+// Build the cube faces for the real input
+fn build_cube_faces() -> CubeFaces {
+	/*  +---+---+
+        | 1 | 2 |
+        +---+---+
+        | 3 |
+    +---+---+
+    | 5 | 4 |
+    +---+---+
+    | 6 |
+    +---+
+	*/
+	let layout =
+		[
+			vec![None,    Some(1), Some(2)],
+			vec![None,    Some(3), None],
+			vec![Some(5), Some(4), None],
+			vec![Some(6), None,    None],
+		];
+	build_faces_from_layout(50, &layout)
 }
 
 type FaceId = u8;
@@ -527,43 +564,39 @@ fn identify_face(cube: &Cube, pos: Pos) -> Option<FaceId> {
 }
 
 /*
-         +-------------+
-         :             :
-         : +---------+ :
-         : :         : :
-         : :       +-^-V-+
-         : :   +--->     >-----------+
-         : :   :   |  1  |           :
-         : :   : +-<     <--------+  :
-       +-^-V-+-^-V-+-^-V-+        :  :
- +----->     >     >     >---+    :  :
- :     |  2  |  3  |  4  |   :    :  :
- :  +--<     <     <     <-+ :    :  :
- :  :  +-^-V-+-^-V-+-^-V-+-^-V-+  :  :
- :  :    : :   : +->     >     >--+  :
- :  :    : :   :   |  5  |  6  |     :
- :  :    : :   +---<     <     <-----+
- :  :    : :       +-^-V-+-^-V-+
- :  :    : :         : :   : :
- :  :    : +---------+ :   : :
- :  :    :             :   : :
- :  :    +-------------+   : :
- :  :                      : :
- :  +----------------------+ :
- :                           :
- +---------------------------+
+ +--------------+     +--------+
+ :              :     :        :
+ :           +--V--+--V--+     :
+ :           |     |     |     :
+ :  +-------->  1  |  2  <--+  :
+ :  :        |     |     |  :  :
+ :  :        +-----+--^--+  :  :
+ :  :        |     |  :     :  :
+ :  :     +-->  3  <--+     :  :
+ :  :     :  |     |        :  :
+ :  :  +--V--+-----+        :  :
+ :  :  |     |     |        :  :
+ :  +-->  5  |  4  <--------+  :
+ :     |     |     |           :
+ :     +-----+--^--+           :
+ :     |     |  :              :
+ +----->  6  <--+              :
+       |     |                 :
+       +--^--+                 :
+          :                    :
+          +--------------------+
 */
 
 /*
  When    |      Up        |      Down      |      Left      |      Right     |
  exiting | Go to | Rotate | Go to | Rotate | Go to | Rotate | Go to | Rotate |
 ---------+----------------+----------------+----------------+----------------+
-   1     |   2       x2   |   4       No   |   3       KW   |   6       x2   |
-   2     |   1       x2   |   5       x2   |   6       CW   |   3       No   |
-   3     |   1       CW   |   5       KW   |   2       No   |   4       No   |
-   4     |   1       No   |   5       No   |   3       No   |   6       CW   |
-   5     |   4       No   |   2       x2   |   3       CW   |   6       No   |
-   6     |   4       KW   |   2       KW   |   5       No   |   1       x2   |
+   1     |   6       CW   |   3       No   |   5       x2   |   2       No   |
+   2     |   6       No   |   3       CW   |   1       No   |   4       x2   |
+   3     |   1       No   |   4       No   |   5       KW   |   2       KW   |
+   4     |   3       No   |   6       CW   |   5       No   |   2       x2   |
+   5     |   3       CW   |   6       No   |   1       x2   |   4       No   |
+   6     |   5       No   |   2       No   |   1       KW   |   4       KW   |
 
 Legend:
   No: don't rotate
@@ -582,41 +615,41 @@ struct Edge {
 
 type CubeEdges = HashMap<(FaceId, Dir), Edge>;
 
-// TODO we could turn this into a lazy const
+// Note: this builds the edges for the real input
 fn build_edges() -> CubeEdges {
 	use Rotation::*;
 	HashMap::from(
 		[
-			// 1     |   2       x2   |   4       No   |   3       KW   |   6       x2   |
-			((1, Up),    Edge { destination: 2, rotation: vec![Clockwise, Clockwise] }),
-			((1, Down),  Edge { destination: 4, rotation: vec![] }),
-			((1, Left),  Edge { destination: 3, rotation: vec![CounterClockwise] }),
-			((1, Right), Edge { destination: 6, rotation: vec![Clockwise, Clockwise] }),
-			// 2     |   1       x2   |   5       x2   |   6       CW   |   3       No   |
-			((2, Up),    Edge { destination: 1, rotation: vec![Clockwise, Clockwise] }),
-			((2, Down),  Edge { destination: 5, rotation: vec![Clockwise, Clockwise] }),
-			((2, Left),  Edge { destination: 6, rotation: vec![Clockwise] }),
-			((2, Right), Edge { destination: 3, rotation: vec![] }),
-			// 3     |   1       CW   |   5       KW   |   2       No   |   4       No   |
-			((3, Up),    Edge { destination: 1, rotation: vec![Clockwise] }),
-			((3, Down),  Edge { destination: 5, rotation: vec![CounterClockwise] }),
-			((3, Left),  Edge { destination: 2, rotation: vec![] }),
-			((3, Right), Edge { destination: 4, rotation: vec![] }),
-			// 4     |   1       No   |   5       No   |   3       No   |   6       CW   |
-			((4, Up),    Edge { destination: 1, rotation: vec![] }),
-			((4, Down),  Edge { destination: 5, rotation: vec![] }),
-			((4, Left),  Edge { destination: 3, rotation: vec![] }),
-			((4, Right), Edge { destination: 6, rotation: vec![Clockwise] }),
-			// 5     |   4       No   |   2       x2   |   3       CW   |   6       No   |
-			((5, Up),    Edge { destination: 4, rotation: vec![] }),
-			((5, Down),  Edge { destination: 2, rotation: vec![Clockwise, Clockwise] }),
-			((5, Left),  Edge { destination: 3, rotation: vec![Clockwise] }),
-			((5, Right), Edge { destination: 6, rotation: vec![] }),
-			// 6     |   4       KW   |   2       KW   |   5       No   |   1       x2   |
-			((6, Up),    Edge { destination: 4, rotation: vec![CounterClockwise] }),
-			((6, Down),  Edge { destination: 2, rotation: vec![CounterClockwise] }),
-			((6, Left),  Edge { destination: 5, rotation: vec![] }),
-			((6, Right), Edge { destination: 1, rotation: vec![Clockwise, Clockwise] }),
+			//   1     |   6       CW   |   3       No   |   5       x2   |   2       No   |
+			((1, Up),    Edge { destination: 6, rotation: vec![Clockwise] }),
+			((1, Down),  Edge { destination: 3, rotation: vec![] }),
+			((1, Left),  Edge { destination: 5, rotation: vec![Clockwise, Clockwise] }),
+			((1, Right), Edge { destination: 2, rotation: vec![] }),
+			//   2     |   6       No   |   3       CW   |   1       No   |   4       x2   |
+			((2, Up),    Edge { destination: 6, rotation: vec![] }),
+			((2, Down),  Edge { destination: 3, rotation: vec![Clockwise] }),
+			((2, Left),  Edge { destination: 1, rotation: vec![] }),
+			((2, Right), Edge { destination: 4, rotation: vec![Clockwise, Clockwise] }),
+			//   3     |   1       No   |   4       No   |   5       KW   |   2       KW   |
+			((3, Up),    Edge { destination: 1, rotation: vec![] }),
+			((3, Down),  Edge { destination: 4, rotation: vec![] }),
+			((3, Left),  Edge { destination: 5, rotation: vec![CounterClockwise] }),
+			((3, Right), Edge { destination: 2, rotation: vec![CounterClockwise] }),
+			//   4     |   3       No   |   6       CW   |   5       No   |   2       x2   |
+			((4, Up),    Edge { destination: 3, rotation: vec![] }),
+			((4, Down),  Edge { destination: 6, rotation: vec![Clockwise] }),
+			((4, Left),  Edge { destination: 5, rotation: vec![] }),
+			((4, Right), Edge { destination: 2, rotation: vec![Clockwise, Clockwise] }),
+			//   5     |   3       CW   |   6       No   |   1       x2   |   4       No   |
+			((5, Up),    Edge { destination: 3, rotation: vec![Clockwise] }),
+			((5, Down),  Edge { destination: 6, rotation: vec![] }),
+			((5, Left),  Edge { destination: 1, rotation: vec![Clockwise, Clockwise] }),
+			((5, Right), Edge { destination: 4, rotation: vec![] }),
+			//   6     |   5       No   |   2       No   |   1       KW   |   4       KW   |
+			((6, Up),    Edge { destination: 5, rotation: vec![] }),
+			((6, Down),  Edge { destination: 2, rotation: vec![] }),
+			((6, Left),  Edge { destination: 1, rotation: vec![CounterClockwise] }),
+			((6, Right), Edge { destination: 4, rotation: vec![CounterClockwise] }),
 		]
 	)
 }
@@ -771,20 +804,18 @@ impl Shape for Cube {
 		let curr_face = identify_face(&self, pos)
 							.expect(&format!("Can't find the face for {:?}", pos));
 		let edge = self.edges.get(&(curr_face, dir)).unwrap();
-		// Trivial edges should never reach here
-		assert!(!edge.rotation.is_empty());
 		cross_edge(&self, edge, self.get_face(curr_face), pos, dir)
 	}
 }
 
 /* Task 2 */
 
-fn task2_param(map_proj: &MapProjection, cube_side_len: Coord, moves: &[Move]) -> i32 {
-	find_password(map_proj, Cube::new(cube_side_len), moves)
+fn task2_param(map_proj: &MapProjection, cube: Cube, moves: &[Move]) -> i32 {
+	find_password(map_proj, cube, moves)
 }
 
 fn task2(map_proj: &MapProjection, moves: &[Move]) -> i32 {
-	task2_param(map_proj, 50, moves)
+	task2_param(map_proj, Cube::new(), moves)
 }
 
 /* Unit tests */
@@ -814,12 +845,120 @@ mod tests {
         static ref EXAMPLE_MOVES: Vec<Move> =
 			parse(io::BufReader::new(EXAMPLE.as_bytes())).1;
 
-		static ref EXAMPLE_CUBE: Cube = Cube::new(4);
+		static ref EXAMPLE_CUBE: Cube = build_test_cube();
     }
 	const A: Pos = Pos { row: 6, column: 12 };
 	const B: Pos = Pos { row: 9, column: 15 };
 	const C: Pos = Pos { row:12, column: 11 };
 	const D: Pos = Pos { row: 8, column:  2 };
+
+	fn build_test_cube() -> Cube {
+		/*      +---+
+			    | 1 |
+		+---+---+---+
+		| 2 | 3 | 4 |
+		+---+---+---+---+
+		        | 5 | 6 |
+		        +---+---+
+		*/
+		let layout =
+			[
+				vec![None,    None,    Some(1), None],
+				vec![Some(2), Some(3), Some(4), None],
+				vec![None,    None,    Some(5), Some(6)],
+			];
+
+		Cube {
+			faces: build_faces_from_layout(4, &layout),
+			edges: build_test_edges()
+		}
+	}
+
+	/*
+			 +-------------+
+			 :             :
+			 : +---------+ :
+			 : :         : :
+			 : :       +-^-V-+
+			 : :   +--->     >-----------+
+			 : :   :   |  1  |           :
+			 : :   : +-<     <--------+  :
+		   +-^-V-+-^-V-+-^-V-+        :  :
+	 +----->     >     >     >---+    :  :
+	 :     |  2  |  3  |  4  |   :    :  :
+	 :  +--<     <     <     <-+ :    :  :
+	 :  :  +-^-V-+-^-V-+-^-V-+-^-V-+  :  :
+	 :  :    : :   : +->     >     >--+  :
+	 :  :    : :   :   |  5  |  6  |     :
+	 :  :    : :   +---<     <     <-----+
+	 :  :    : :       +-^-V-+-^-V-+
+	 :  :    : :         : :   : :
+	 :  :    : +---------+ :   : :
+	 :  :    :             :   : :
+	 :  :    +-------------+   : :
+	 :  :                      : :
+	 :  +----------------------+ :
+	 :                           :
+	 +---------------------------+
+	*/
+
+	/*
+	 When    |      Up        |      Down      |      Left      |      Right     |
+	 exiting | Go to | Rotate | Go to | Rotate | Go to | Rotate | Go to | Rotate |
+	---------+----------------+----------------+----------------+----------------+
+	   1     |   2       x2   |   4       No   |   3       KW   |   6       x2   |
+	   2     |   1       x2   |   5       x2   |   6       CW   |   3       No   |
+	   3     |   1       CW   |   5       KW   |   2       No   |   4       No   |
+	   4     |   1       No   |   5       No   |   3       No   |   6       CW   |
+	   5     |   4       No   |   2       x2   |   3       CW   |   6       No   |
+	   6     |   4       KW   |   2       KW   |   5       No   |   1       x2   |
+
+	Legend:
+	  No: don't rotate
+	  CW: clockwise
+	  KW: counter-clockwise
+	  2x: full turn
+
+	  Note that rotating requires changing the facing direction
+	  but also the coordinates when entering the new face.
+	*/
+	fn build_test_edges() -> CubeEdges {
+		use Rotation::*;
+		HashMap::from(
+			[
+				// 1     |   2       x2   |   4       No   |   3       KW   |   6       x2   |
+				((1, Up),    Edge { destination: 2, rotation: vec![Clockwise, Clockwise] }),
+				((1, Down),  Edge { destination: 4, rotation: vec![] }),
+				((1, Left),  Edge { destination: 3, rotation: vec![CounterClockwise] }),
+				((1, Right), Edge { destination: 6, rotation: vec![Clockwise, Clockwise] }),
+				// 2     |   1       x2   |   5       x2   |   6       CW   |   3       No   |
+				((2, Up),    Edge { destination: 1, rotation: vec![Clockwise, Clockwise] }),
+				((2, Down),  Edge { destination: 5, rotation: vec![Clockwise, Clockwise] }),
+				((2, Left),  Edge { destination: 6, rotation: vec![Clockwise] }),
+				((2, Right), Edge { destination: 3, rotation: vec![] }),
+				// 3     |   1       CW   |   5       KW   |   2       No   |   4       No   |
+				((3, Up),    Edge { destination: 1, rotation: vec![Clockwise] }),
+				((3, Down),  Edge { destination: 5, rotation: vec![CounterClockwise] }),
+				((3, Left),  Edge { destination: 2, rotation: vec![] }),
+				((3, Right), Edge { destination: 4, rotation: vec![] }),
+				// 4     |   1       No   |   5       No   |   3       No   |   6       CW   |
+				((4, Up),    Edge { destination: 1, rotation: vec![] }),
+				((4, Down),  Edge { destination: 5, rotation: vec![] }),
+				((4, Left),  Edge { destination: 3, rotation: vec![] }),
+				((4, Right), Edge { destination: 6, rotation: vec![Clockwise] }),
+				// 5     |   4       No   |   2       x2   |   3       CW   |   6       No   |
+				((5, Up),    Edge { destination: 4, rotation: vec![] }),
+				((5, Down),  Edge { destination: 2, rotation: vec![Clockwise, Clockwise] }),
+				((5, Left),  Edge { destination: 3, rotation: vec![Clockwise] }),
+				((5, Right), Edge { destination: 6, rotation: vec![] }),
+				// 6     |   4       KW   |   2       KW   |   5       No   |   1       x2   |
+				((6, Up),    Edge { destination: 4, rotation: vec![CounterClockwise] }),
+				((6, Down),  Edge { destination: 2, rotation: vec![CounterClockwise] }),
+				((6, Left),  Edge { destination: 5, rotation: vec![] }),
+				((6, Right), Edge { destination: 1, rotation: vec![Clockwise, Clockwise] }),
+			]
+		)
+	}
 
     #[test]
     fn validate_task1() {
@@ -828,7 +967,7 @@ mod tests {
 
     #[test]
     fn validate_task2() {
-        assert_eq!(task2_param(&EXAMPLE_PLANET, 4, &EXAMPLE_MOVES), 5031);
+        assert_eq!(task2_param(&EXAMPLE_PLANET, build_test_cube(), &EXAMPLE_MOVES), 5031);
     }
 
     #[test]
@@ -860,7 +999,7 @@ mod tests {
 
     #[test]
     fn test_rotate_within_face() {
-		/* Clokwise:
+		/* Clockwise:
            .2.#
            ...3
            1#..
@@ -909,6 +1048,51 @@ mod tests {
         assert_eq!(
 			rotate_within_face(face, p1, CounterClockwise),
 			C);
+    }
+
+    fn test_full_circle(cube: Cube, start_pos: Pos) {
+		let mut map_proj = HashMap::new();
+		for face in cube.faces.iter() {
+			for row in face.top_row..(face.bot_row+1) {
+				for column in face.left_col..(face.right_col+1) {
+					map_proj.insert(Pos {row, column}, Tile::Open);
+				}
+			}
+		}
+		let recurr_time = 50*4;
+
+		let mut astronaut = Astronaut {
+			planet: Planet {
+				shape_3d:   cube,
+				terrain_2d: &map_proj,
+			},
+			curr_dir: Down,
+			curr_pos: start_pos
+		};
+		astronaut.walk(recurr_time);
+		assert_eq!(astronaut.curr_pos, start_pos);
+
+		astronaut.curr_dir = Left;
+		astronaut.walk(recurr_time);
+		assert_eq!(astronaut.curr_pos, start_pos);
+
+		astronaut.curr_dir = Right;
+		astronaut.walk(recurr_time);
+		assert_eq!(astronaut.curr_pos, start_pos);
+
+		astronaut.curr_dir = Up;
+		astronaut.walk(recurr_time);
+		assert_eq!(astronaut.curr_pos, start_pos);
+	}
+
+    #[test]
+    fn test_real_cube() {
+		let cube = Cube::new();
+		let start_pos = Pos {
+			row:    cube.faces[0].top_row + 1,
+			column: cube.faces[0].left_col + 1,
+		};
+		test_full_circle(cube, start_pos);
     }
 
 }
