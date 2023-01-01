@@ -7,10 +7,10 @@ use std::mem;
 type Input<T> = io::BufReader<T>;
 
 pub fn run(file_content: Input<File>) {
-    //let (map_proj, moves) = parse(file_content);
+    let squad = parse(file_content);
 
-    //let res1 = task1(&map_proj, &moves);
-    //println!("Task 1: {}", res1);
+    let res1 = task1(squad);
+    println!("Task 1: {}", res1);
     //assert_eq!(res1, 88226);
 
     //let res2 = task2(&map_proj, &moves);
@@ -20,40 +20,28 @@ pub fn run(file_content: Input<File>) {
 
 /* Parsing */
 
-//fn parse<T: io::Read>(file_content: Input<T>) -> (MapProjection, Vec<Move>) {
-    //let mut line_iter = file_content.lines();
-
-    //// Parse the planet
-    //let mut curr_row = 1;
-    //let mut map_proj = MapProjection::new();
-
-    //while let Some(line_res) = line_iter.next() {
-		//let line = line_res.unwrap();
-		//if line.is_empty() {
-			//// This is the separator
-			//// What follows is the move sequence
-			//break;
-		//}
-
-		//parse_map_proj_row(&mut map_proj, line, curr_row);
-		//curr_row += 1;
-	//}
-
-	//// Parse the move sequence
-	//let move_line = line_iter.next().unwrap().unwrap();
-	//assert!(line_iter.next().is_none());
-	//let mut moves = Vec::new();
-	//for segment in segregate_str(&move_line, char::is_ascii_digit) {
-		//let m =
-			//match segment {
-				//Ok(digits) => Move::Walk(digits.parse().unwrap()),
-				//Err(chars) => Move::Turn(chars.parse().unwrap()),
-			//};
-		//moves.push(m);
-	//}
-
-	//return (map_proj, moves);
-//}
+fn parse<T: io::Read>(file_content: Input<T>) -> Squad {
+    let mut squad = Squad::new();
+    let mut north = 0;
+    for line in file_content.lines() {
+		let mut east = 0;
+		for c in line.unwrap().chars() {
+			match c {
+				'.' => {},
+				'#' => {
+					let pos = Pos { north, east };
+					squad.insert(pos);
+				},
+				_   => panic!("Unrecognized input character: {:?}", c),
+			}
+			/* The columns expand eastward */
+			east += 1;
+		}
+		/* The lines expand southward */
+		north -= 1;
+	}
+	return squad;
+}
 
 /* Coordinate system */
 
