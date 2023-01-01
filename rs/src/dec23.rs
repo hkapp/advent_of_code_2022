@@ -69,6 +69,7 @@ struct Pos {
 enum Dir {
 	North, South, East, West
 }
+use Dir::*;
 
 impl Pos {
 	fn move_in_dir(&self, dir: Dir) -> Self {
@@ -107,7 +108,7 @@ impl Pos {
 
 struct Circlet<T> {
 	first_idx: usize,
-	items:     [T]
+	items:     Box<[T]>
 }
 
 impl<T> Circlet<T> {
@@ -117,6 +118,10 @@ impl<T> Circlet<T> {
 			wrap_iter:  Some(self.items[0..self.first_idx].iter())
 						/* Note that this may be empty */
 		}
+	}
+
+	fn advance(&mut self, steps: usize) {
+		self.first_idx = (self.first_idx + steps) % self.items.len();
 	}
 }
 
@@ -145,6 +150,15 @@ impl<'a, T> Iterator for CircletIter<'a, T> {
 					}
 				}
 			}
+		}
+	}
+}
+
+impl<T> From<Vec<T>> for Circlet<T> {
+	fn from(vec: Vec<T>) -> Self {
+		Circlet {
+			first_idx: 0,
+			items:     vec.into_boxed_slice()
 		}
 	}
 }
@@ -205,6 +219,79 @@ fn phase1(squad: &Squad, rule_book: &RuleBook) -> Phase1 {
 		propositions,
 		prop_count,
 	}
+}
+
+/* Phase 2 */
+
+fn phase2(squad: &mut Squad, phase1: &Phase1) {
+	for prop in &phase1.propositions {
+		let (prev_pos, new_pos) = *prop;
+		let prop_count = *phase1.prop_count.get(&new_pos).unwrap();
+		if prop_count == 1 {
+			squad.remove(&prev_pos);
+			squad.insert(new_pos);
+		}
+	}
+}
+
+/* Round */
+
+fn elf_round(squad: &mut Squad, rule_book: &mut RuleBook) {
+	let p1 = phase1(squad, rule_book);
+	phase2(squad, &p1);
+	rule_book.advance(1);
+}
+
+/* Rect */
+
+struct Rect {
+	north_edge: Coord,
+	south_edge: Coord,
+	east_edge:  Coord,
+	west_edge:  Coord
+}
+
+macro_rules! rect_edge {
+	( $squad:expr, $field:ident, $op:ident ) => {
+		$squad.iter()
+			.map(|p| p.$field)
+			.$op()
+			.unwrap()
+	}
+}
+
+fn enclosing_rect(squad: &Squad) -> Rect {
+	Rect {
+		north_edge: rect_edge!(squad, north, max),
+		south_edge: rect_edge!(squad, north, min),
+		east_edge:  rect_edge!(squad, east, max),
+		west_edge:  rect_edge!(squad, east, min),
+	}
+}
+
+impl Rect {
+	fn area(&self) -> Coord {
+		// Note: if south_edge == north_edge, we still count height=1
+		let height = self.north_edge - self.south_edge + 1;
+		let width  = self.east_edge - self.west_edge + 1;
+		height * width
+	}
+}
+
+/* Task 1 */
+
+fn init_rule_book() -> RuleBook {
+	RuleBook::from(vec![North, South, East, West])
+}
+
+fn task1(mut squad: Squad) -> Coord {
+	let mut rule_book = init_rule_book();
+	for _ in 0..10 {
+		elf_round(&mut squad, &mut rule_book);
+	}
+
+	let rect = enclosing_rect(&squad);
+	rect.area() - squad.len() as Coord
 }
 
 /* Unit tests */
