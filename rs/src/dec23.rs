@@ -1,7 +1,8 @@
 use std::fs::File;
 use std::io::{self, BufRead};
-use std::collections::HashMap;
-use std::str::FromStr;
+use std::collections::{HashMap, HashSet};
+use std::slice;
+use std::mem;
 
 type Input<T> = io::BufReader<T>;
 
@@ -55,6 +56,156 @@ pub fn run(file_content: Input<File>) {
 //}
 
 /* Coordinate system */
+
+type Coord = i16;
+
+#[derive(PartialEq, Eq, Debug, Hash, Clone, Copy)]
+struct Pos {
+	north: Coord,
+	east:  Coord,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Dir {
+	North, South, East, West
+}
+
+impl Pos {
+	fn move_in_dir(&self, dir: Dir) -> Self {
+		match dir {
+			North => Pos { north: self.north + 1, east: self.east },
+			South => Pos { north: self.north - 1, east: self.east },
+			East  => Pos { north: self.north, east: self.east + 1 },
+			West  => Pos { north: self.north, east: self.east - 1 },
+		}
+	}
+
+	fn neighbours_in_dir(&self, dir: Dir) -> [Self; 3] {
+		let (north_const, east_const) =
+			match dir {
+				North => (Some(self.north + 1), None),
+				South => (Some(self.north - 1), None),
+				East  => (None, Some(self.east + 1)),
+				West  => (None, Some(self.east - 1)),
+			};
+
+		let neigh = |delta| {
+			Pos {
+				north: north_const.unwrap_or_else(|| self.north + delta),
+				east:  east_const.unwrap_or_else(|| self.east + delta),
+			}
+		};
+
+		[neigh(-1), neigh(0), neigh(1)]
+	}
+}
+
+/* Circlet */
+/* A circlet is a finite ring
+ * Its iterator has a beginning and an end
+ */
+
+struct Circlet<T> {
+	first_idx: usize,
+	items:     [T]
+}
+
+impl<T> Circlet<T> {
+	fn iter<'a>(&'a self) -> CircletIter<'a, T> {
+		CircletIter {
+			slice_iter: self.items[self.first_idx..].iter(),
+			wrap_iter:  Some(self.items[0..self.first_idx].iter())
+						/* Note that this may be empty */
+		}
+	}
+}
+
+struct CircletIter<'a, T> {
+	slice_iter: slice::Iter<'a, T>,
+	wrap_iter:  Option<slice::Iter<'a, T>>,
+}
+
+impl<'a, T> Iterator for CircletIter<'a, T> {
+	type Item = &'a T;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		match self.slice_iter.next() {
+			Some(x) => Some(x),
+			None    => {
+				match mem::replace(&mut self.wrap_iter, None) {
+					Some(new_iter) => {
+						/* Wrap around */
+						self.slice_iter = new_iter;
+						self.wrap_iter = None;
+						self.next()
+					}
+					None => {
+						/* We already wrapped around, the iterator is depleted */
+						None
+					}
+				}
+			}
+		}
+	}
+}
+
+/* Phase 1 */
+
+fn has_neighbour_in_dir(elf_pos: Pos, dir: Dir, squad: &Squad) -> bool {
+	elf_pos.neighbours_in_dir(dir)
+		.iter()
+		.any(|neigh| squad.contains(neigh))
+}
+
+type RuleBook = Circlet<Dir>;
+
+fn elf_propose(curr_pos: Pos, rule_book: &RuleBook, squad: &Squad) -> Option<Pos> {
+	let mut any_neighbours = false;
+	let mut next_pos = None;
+	for dir in rule_book.iter() {
+		if has_neighbour_in_dir(curr_pos, *dir, squad) {
+			any_neighbours = true;
+		}
+		else if next_pos.is_none() {
+			next_pos = Some(curr_pos.move_in_dir(*dir));
+		}
+	}
+
+	if any_neighbours {
+		next_pos
+	}
+	else {
+		None
+	}
+}
+
+type Squad = HashSet<Pos>;
+
+struct Phase1 {
+	propositions: Vec<(Pos, Pos)>,
+	prop_count:   HashMap<Pos, u16>
+}
+
+fn phase1(squad: &Squad, rule_book: &RuleBook) -> Phase1 {
+	let mut propositions = Vec::new();
+	let mut prop_count = HashMap::new();
+
+	for elf_pos in squad.iter() {
+		if let Some(new_pos) = elf_propose(*elf_pos, rule_book, squad) {
+			propositions.push((*elf_pos, new_pos));
+
+			// Increase the count for this proposition
+			let prev_count = prop_count.remove(&new_pos);
+			let new_count = prev_count.unwrap_or(0) + 1;
+			prop_count.insert(new_pos, new_count);
+		}
+	}
+
+	Phase1 {
+		propositions,
+		prop_count,
+	}
+}
 
 /* Unit tests */
 
