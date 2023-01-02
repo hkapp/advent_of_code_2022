@@ -17,7 +17,7 @@ pub fn run(file_content: Input<File>) {
 
     let res1 = task1(&valley);
     println!("Task 1: {}", res1);
-    //assert_eq!(res1, 4056);
+    assert_eq!(res1, 245);
 
     //let res2 = task2(squad);
     //println!("Task 2: {}", res2);
@@ -356,6 +356,9 @@ impl<'a> AStar for Expedition<'a> {
 	type Expansion = vec::IntoIter<Self>;
 
 	fn expand(&self) -> Self::Expansion {
+		if (self as *const Self as usize & 0b0101111) == 0 {
+			print!("t={},p={},{:?};", self.time, self.potential(), self.curr_pos);
+		}
 		if self.reached_exit() {
 			// This tells astar that we're done
 			println!("\nReached the exit in {} moves", self.time);
@@ -409,7 +412,6 @@ fn valid_moves(xp: &Expedition) -> Vec<Pos> {
 	for dir in Dir::all() {
 		let new_pos = xp.curr_pos.move_in_dir(dir);
 		if xp.can_move_to(new_pos) {
-			// TODO this needs to test both the edges of the valley and the blizzards
 			candidates.push(new_pos);
 		}
 	}
@@ -705,6 +707,22 @@ mod tests {
 
 		xp2.curr_pos = valley.exit_pos;
 		// xp2 > xp1 because both exited but xp2.time < xp1.time
+		assert!(xp2 > xp1);
+	}
+
+	#[test]
+	fn test_compare() {
+		let valley = example_valley();
+
+		let xp1 = Expedition::new(&valley);
+
+		let mut xp2 = Expedition::new(&valley);
+		xp2.time += 1;
+		// xp2 is worse than xp1 (waited in place)
+		assert!(xp1 > xp2);
+
+		xp2.move_to(xp2.curr_pos.move_in_dir(South));
+		// xp2 is better than xp1 (it actually moved towards the goal)
 		assert!(xp2 > xp1);
 	}
 

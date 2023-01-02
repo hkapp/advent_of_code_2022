@@ -1,4 +1,4 @@
-use std::collections::BinaryHeap;
+use std::collections::BTreeSet;
 use std::cmp;
 
 pub trait AStar: Ord + Sized + Clone {
@@ -13,8 +13,8 @@ pub fn astar<T>(start: T) -> T
         T: AStar
 {
     let mut curr_best = start.clone();
-    let mut pq = BinaryHeap::new();
-    pq.push(start);
+    let mut pq = BTreeSet::new();
+    pq.insert(start);
 
     let mut late_pruned: u64 = 0;
     let mut early_pruned: u64 = 0;
@@ -22,7 +22,7 @@ pub fn astar<T>(start: T) -> T
 
     let mut next_print = 1000;
 
-    while let Some(curr_node) = pq.pop() {
+    while let Some(curr_node) = pq.pop_last() {
         if curr_node.prune(&curr_best) {
             late_pruned += 1;
             continue;
@@ -37,7 +37,7 @@ pub fn astar<T>(start: T) -> T
             }
             else {
                 expanded += 1;
-                pq.push(next);
+                pq.insert(next);
             }
         }
 
@@ -50,4 +50,22 @@ pub fn astar<T>(start: T) -> T
     println!("astar: expanded {} nodes, pruned {} early and {} late", expanded, early_pruned, late_pruned);
 
     return curr_best;
+}
+
+
+/* Unit tests */
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pq_dup() {
+        let mut heap: BTreeSet<u8> = BTreeSet::new();
+        heap.insert(1);
+        assert_eq!(heap.len(), 1);
+        heap.insert(1);
+        assert_eq!(heap.len(), 1);
+    }
+
 }
