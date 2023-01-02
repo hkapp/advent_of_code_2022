@@ -19,9 +19,9 @@ pub fn run(file_content: Input<File>) {
     println!("Task 1: {}", res1);
     assert_eq!(res1, 245);
 
-    //let res2 = task2(squad);
-    //println!("Task 2: {}", res2);
-    //assert_eq!(res2, 999);
+    let res2 = task2(valley);
+    println!("Task 2: {}", res2);
+    assert_eq!(res2, 798);
 }
 
 /* Parsing */
@@ -473,16 +473,43 @@ impl<'a> Expedition<'a> {
 /* Task 1 */
 
 fn task1(valley: &Valley) -> Time {
-	let /*mut*/ start_xp = Expedition::new(valley);
-	// TODO remove
-	//let start_pos = Pos {
-		//north: valley.south_wall + 1,
-		//east:  valley.east_wall - 3,
-	//};
-	//start_xp.curr_pos = start_pos;
-
+	let start_xp = Expedition::new(valley);
 	let final_xp = astar(start_xp);
 	final_xp.time
+}
+
+/* Task 2 */
+
+fn task2(mut valley: Valley) -> Time {
+	let start_xp = Expedition::new(&valley);
+	let first_exit = astar(start_xp);
+	let first_exit_time = first_exit.time;
+
+	let start_pos = valley.start_pos;
+	let exit_pos = valley.exit_pos;
+
+	/* Swap start and end */
+	valley.start_pos = exit_pos;
+	valley.exit_pos = start_pos;
+	let snacks_start = Expedition {
+		valley:   &valley,
+		curr_pos: exit_pos,
+		time:     first_exit_time,
+	};
+	let after_snacks = astar(snacks_start);
+	let time_after_snacks = after_snacks.time;
+
+	/* Swap start and end again */
+	valley.start_pos = start_pos;
+	valley.exit_pos = exit_pos;
+	let second_run = Expedition {
+		valley: &valley,
+		curr_pos: start_pos,
+		time: time_after_snacks,
+	};
+	let second_exit = astar(second_run);
+
+	second_exit.time
 }
 
 /* Unit tests */
@@ -512,6 +539,11 @@ mod tests {
     #[test]
     fn validate_task1() {
         assert_eq!(task1(&example_valley()), 18);
+    }
+
+    #[test]
+    fn validate_task2() {
+        assert_eq!(task2(example_valley()), 54);
     }
 
 	fn assert_fmt<T: Eq + std::fmt::Debug + std::fmt::Display>(left: T, right: T) {
