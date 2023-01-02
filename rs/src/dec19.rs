@@ -1,12 +1,12 @@
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::iter::Iterator;
-use std::collections::BinaryHeap;
 use std::cmp;
 use std::ops::{Index, IndexMut};
 use std::convert::TryFrom;
 use std::cell::Cell;
 use std::vec;
+use crate::astar::*;
 
 type Input<T> = io::BufReader<T>;
 
@@ -177,43 +177,6 @@ impl Warehouse {
         init.resources[Mineral::Ore].production = 1;
         return init;
     }
-}
-
-/* A star */
-
-trait AStar: Ord + Sized + Clone {
-    type Expansion: Iterator<Item=Self>;
-
-    fn expand(&self) -> Self::Expansion;
-    fn prune(&self, curr_best: &Self) -> bool;
-}
-
-fn astar<T>(start: T) -> T
-    where
-        T: AStar
-{
-    let mut curr_best = start.clone();
-    let mut pq = BinaryHeap::new();
-    pq.push(start);
-
-    let mut pruned: u64 = 0;
-    let mut expanded: u64 = 0;
-
-    while let Some(curr_node) = pq.pop() {
-        if curr_node.prune(&curr_best) {
-            pruned += 1;
-            continue;
-        }
-        for next in curr_node.expand() {
-            expanded += 1;
-            pq.push(next);
-        }
-        curr_best = cmp::max(curr_best, curr_node);
-    }
-
-    println!("astar: expanded {} nodes, pruned {}", expanded, pruned);
-
-    return curr_best;
 }
 
 /* Blueprint */

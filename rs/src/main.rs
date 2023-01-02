@@ -7,6 +7,8 @@ mod dec22;
 mod dec23;
 mod dec24;
 
+mod astar;
+
 #[cfg(test)]
 #[macro_use]
 extern crate lazy_static;
