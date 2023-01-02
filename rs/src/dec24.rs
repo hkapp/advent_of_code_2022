@@ -2,7 +2,8 @@ use std::fs::File;
 use std::io::{self, BufRead};
 use std::cmp::{self, Ordering};
 use crate::astar::{astar, AStar};
-use std::rc::Rc;
+use std::cell::{self, RefCell};
+use std::collections::HashMap;
 use multimap::MultiMap;
 use std::vec;
 use std::slice;
@@ -12,9 +13,9 @@ use std::hash::Hash;
 type Input<T> = io::BufReader<T>;
 
 pub fn run(file_content: Input<File>) {
-    let (valley, blizzards) = parse(file_content);
+    let valley = parse(file_content);
 
-    let res1 = task1(&valley, blizzards.clone());
+    let res1 = task1(&valley);
     println!("Task 1: {}", res1);
     //assert_eq!(res1, 4056);
 
@@ -25,7 +26,7 @@ pub fn run(file_content: Input<File>) {
 
 /* Parsing */
 
-fn parse<T: io::Read>(file_content: Input<T>) -> (Valley, Rc<Blizzards>) {
+fn parse<T: io::Read>(file_content: Input<T>) -> Valley {
     /* Fields for Valley */
     let north_wall = 0;
     let mut south_wall = None;
@@ -76,17 +77,18 @@ fn parse<T: io::Read>(file_content: Input<T>) -> (Valley, Rc<Blizzards>) {
 		north -= 1;
 	}
 
-	let valley = Valley {
+	Valley {
 		north_wall,
 		south_wall: south_wall.unwrap(),
 		east_wall:  east_wall.unwrap(),
 		west_wall,
 
 		start_pos: start_pos.unwrap(),
-		exit_pos:  exit_pos.unwrap()
-	};
+		exit_pos:  exit_pos.unwrap(),
 
-	(valley, Rc::from(blizzards))
+		blizzard_history: RefCell::new(
+							HashMap::from([(0, blizzards)]),)
+	}
 }
 
 impl FromStr for Dir {
@@ -152,6 +154,8 @@ struct Valley {
 
 	start_pos:  Pos,
 	exit_pos:   Pos,
+
+	blizzard_history: RefCell<HashMap<Time, Blizzards>>,
 }
 
 impl Valley {
@@ -166,11 +170,66 @@ impl Valley {
 		|| pos == self.start_pos
 		|| pos == self.exit_pos
 	}
+
+	fn blizzard_at_time<'a >(&'a self, t: Time) -> cell::Ref<'a, Blizzards> {
+		if let Some(b) = self.get_cached_blizzard(t) {
+			b
+		}
+		else {
+			let prev_blizzard = self.get_cached_blizzard(t-1)
+								.expect("No previous blizzard to compute from");
+			let mut new_blizzard = prev_blizzard.clone();
+			drop(prev_blizzard);
+			move_blizzards(&mut new_blizzard, self);
+			self.blizzard_history.borrow_mut().insert(t, new_blizzard);
+			self.get_cached_blizzard(t).unwrap()
+		}
+	}
+
+	fn get_cached_blizzard(&self, t: Time) -> Option<cell::Ref<Blizzards>> {
+		cell::Ref::filter_map(
+			self.blizzard_history.borrow(),
+			|hist| hist.get(&t))
+			.ok()
+	}
 }
 
 /* Blizzards */
 
 type Blizzards = MultiMap<Pos, Dir>;
+
+fn move_blizzards(blizzards: &mut Blizzards, valley: &Valley) {
+	let move_one_blizzard = |curr_pos: Pos, dir| {
+		let new_pos = curr_pos.move_in_dir(dir);
+		if valley.is_valid_pos(new_pos) {
+			new_pos
+		}
+		else {
+			// Wrap around
+			/*  +--^--v--+
+			 *  >        >
+			 *  |        |
+			 *  <        <
+			 *  +--^--v--+
+			 */
+			match dir {
+				North => Pos { north: valley.south_wall + 1, east: new_pos.east },
+				South => Pos { north: valley.north_wall - 1, east: new_pos.east },
+				East  => Pos { north: new_pos.north, east: valley.west_wall + 1 },
+				West  => Pos { north: new_pos.north, east: valley.east_wall - 1 },
+			}
+		}
+	};
+
+	let prev_size = multi_map_len(&blizzards);
+	let new_blizzards: Blizzards =
+		multi_iter(&blizzards)
+			.map(|(pos, dir)| (move_one_blizzard(*pos, *dir), *dir))
+			.collect();
+	assert_eq!(multi_map_len(&new_blizzards), prev_size, "new_blizzards: {:?}", new_blizzards);
+
+	*blizzards = new_blizzards;
+}
 
 // For some reason, this is not part of the multimap crate
 fn multi_iter<'a, K: Eq + Hash, V>(multi_map: &'a MultiMap<K, V>) -> MultiIter<'a, K, V> {
@@ -234,7 +293,6 @@ type Time = u16;
 struct Expedition<'a> {
 	curr_pos:  Pos,
 	time:      Time,
-	blizzards: Rc<Blizzards>,
 	valley:    &'a Valley
 }
 
@@ -262,6 +320,8 @@ impl<'a> PartialOrd for Expedition<'a> {
 			}
 			// Now compare the time + manhattan distance
 			// Note that this is safe to do even if the expedition is dead
+			// Also note that if we only compare distance to exit,
+			// we do greedy search which might end up in a non-working loop
 			match self.potential().cmp(&other.potential()) {
 				Ordering::Greater => return Some(Ordering::Less), /* this is worse */
 				Ordering::Less    => return Some(Ordering::Greater), /* lower is better */
@@ -275,12 +335,6 @@ impl<'a> PartialOrd for Expedition<'a> {
 			}
 			/* Now we don't care about ordering, it's just about not being equal */
 			match self.curr_pos.cmp(&other.curr_pos) {
-				Ordering::Equal   => {},
-				neq               => return Some(neq)
-			}
-			// MultiMap doesn't implement ordering
-			// Instead, compare data pointers (could be same if Rc points to the same)
-			match Rc::as_ptr(&self.blizzards).cmp(&Rc::as_ptr(&other.blizzards)) {
 				Ordering::Equal   => {},
 				neq               => return Some(neq)
 			}
@@ -309,7 +363,9 @@ impl<'a> AStar for Expedition<'a> {
 		}
 
 		let mut post_blizzard: Expedition = self.clone();
-		post_blizzard.move_blizzards();
+		//post_blizzard.move_blizzards();
+		// Note: modifying the time is now enough to move the blizzard
+		post_blizzard.time += 1;
 		let candidate_moves = valid_moves(&post_blizzard);
 		let next_states =
 			if candidate_moves.is_empty() {
@@ -375,46 +431,12 @@ impl<'a> Expedition<'a> {
 		// 1. Check map boundaries
 		self.valley.is_valid_pos(pos) &&
 		// 2. Check blizzards
-		!self.blizzards.contains_key(&pos)
+		!self.blizzards().contains_key(&pos)
 	}
 
 	fn move_to(&mut self, new_pos: Pos) {
+		// Note: the time is now moved when we move the blizzard
 		self.curr_pos = new_pos;
-		assert_ne!(self.time, Time::MAX);
-		self.time += 1;
-	}
-
-	fn move_blizzards(&mut self) {
-		let move_one_blizzard = |curr_pos: Pos, dir| {
-			let new_pos = curr_pos.move_in_dir(dir);
-			if self.valley.is_valid_pos(new_pos) {
-				new_pos
-			}
-			else {
-				// Wrap around
-				/*  +--^--v--+
-				 *  >        >
-				 *  |        |
-				 *  <        <
-				 *  +--^--v--+
-				 */
-				match dir {
-					North => Pos { north: self.valley.south_wall + 1, east: new_pos.east },
-					South => Pos { north: self.valley.north_wall - 1, east: new_pos.east },
-					East  => Pos { north: new_pos.north, east: self.valley.west_wall + 1 },
-					West  => Pos { north: new_pos.north, east: self.valley.east_wall - 1 },
-				}
-			}
-		};
-
-		let prev_size = multi_map_len(&self.blizzards);
-		let new_blizzards: Blizzards =
-			multi_iter(&self.blizzards)
-				.map(|(pos, dir)| (move_one_blizzard(*pos, *dir), *dir))
-				.collect();
-		assert_eq!(multi_map_len(&new_blizzards), prev_size, "new_blizzards: {:?}", new_blizzards);
-
-		self.blizzards = Rc::new(new_blizzards);
 	}
 
 	fn reached_exit(&self) -> bool {
@@ -433,20 +455,30 @@ impl<'a> Expedition<'a> {
 		}
 	}
 
-	fn new(valley: &'a Valley, blizzards: Rc<Blizzards>) -> Self {
+	fn new(valley: &'a Valley) -> Self {
 		Expedition {
 			curr_pos:  valley.start_pos,
 			time:      0,
-			blizzards,
 			valley,
 		}
+	}
+
+	fn blizzards(&self) -> cell::Ref<'_, Blizzards> {
+		self.valley.blizzard_at_time(self.time)
 	}
 }
 
 /* Task 1 */
 
-fn task1(valley: &Valley, init_blizzards: Rc<Blizzards>) -> Time {
-	let start_xp = Expedition::new(valley, init_blizzards.clone());
+fn task1(valley: &Valley) -> Time {
+	let /*mut*/ start_xp = Expedition::new(valley);
+	// TODO remove
+	//let start_pos = Pos {
+		//north: valley.south_wall + 1,
+		//east:  valley.east_wall - 3,
+	//};
+	//start_xp.curr_pos = start_pos;
+
 	let final_xp = astar(start_xp);
 	final_xp.time
 }
@@ -464,22 +496,20 @@ mod tests {
 #<^v^^>#
 ######.#";
 
-    lazy_static! {
-        static ref EXAMPLE_VALLEY:    Valley = parse_str(EXAMPLE).0;
-        static ref EXAMPLE_BLIZZARDS: Blizzards = Rc::try_unwrap(parse_str(EXAMPLE).1).unwrap();
-    }
-
-    fn parse_str(s: &str) -> (Valley, Rc<Blizzards>) {
-		parse(io::BufReader::new(s.as_bytes()))
+    //lazy_static! {
+        //static ref EXAMPLE_VALLEY:    Valley = parse_str(EXAMPLE);
+    //}
+	fn example_valley() -> Valley {
+		parse_str(EXAMPLE)
 	}
 
-	fn example_blizzards() -> Rc<Blizzards> {
-		Rc::from(EXAMPLE_BLIZZARDS.clone())
+    fn parse_str(s: &str) -> Valley {
+		parse(io::BufReader::new(s.as_bytes()))
 	}
 
     #[test]
     fn validate_task1() {
-        assert_eq!(task1(&EXAMPLE_VALLEY, example_blizzards()), 18);
+        assert_eq!(task1(&example_valley()), 18);
     }
 
 	fn assert_fmt<T: Eq + std::fmt::Debug + std::fmt::Display>(left: T, right: T) {
@@ -488,7 +518,8 @@ mod tests {
 
     #[test]
     fn validate_task1_steps() {
-		let mut xp = Expedition::new(&EXAMPLE_VALLEY, example_blizzards());
+		let valley = example_valley();
+		let mut xp = Expedition::new(&valley);
 		let expected = "#E######
 #>>.<^<#
 #.<..<<#
@@ -499,7 +530,7 @@ mod tests {
 
 		/* Minute 1, move down: */
 		xp.move_to(xp.curr_pos.move_in_dir(South));
-		xp.move_blizzards();
+		xp.time += 1;
 		let expected = "#.######
 #E>3.<.#
 #<..<<.#
@@ -510,7 +541,7 @@ mod tests {
 
 		/* Minute 2, move down: */
 		xp.move_to(xp.curr_pos.move_in_dir(South));
-		xp.move_blizzards();
+		xp.time += 1;
 		let expected = "#.######
 #.2>2..#
 #E^22^<#
@@ -543,7 +574,8 @@ mod tests {
 						}
 						else {
 							let empty_vec = Vec::new();
-							let blizzards_here = xp.blizzards.get_vec(&pos).unwrap_or(&empty_vec);
+							let curr_blizzards = xp.blizzards();
+							let blizzards_here = curr_blizzards.get_vec(&pos).unwrap_or(&empty_vec);
 							match blizzards_here.len() {
 								0 => '.',
 								1 => (*blizzards_here.get(0).unwrap()).into(),
@@ -575,8 +607,8 @@ mod tests {
 #<.....#
 #....v.#
 ######.#";
-		let (valley, blizzards) = parse_str(simpler_example);
-		let mut xp = Expedition::new(&valley, blizzards);
+		let valley = parse_str(simpler_example);
+		let mut xp = Expedition::new(&valley);
 		let expected = "#E######
 #....^>#
 #......#
@@ -585,7 +617,7 @@ mod tests {
 ######.#";
 		assert_fmt::<&str>(&show_expedition(&xp), expected);
 
-		xp.move_blizzards();
+		xp.time += 1;
 		let expected = "#E######
 #>...v.#
 #......#
@@ -634,6 +666,46 @@ mod tests {
 
 		assert_eq!(multi_map.len(), 3);
 		assert_eq!(multi_map_len(&multi_map), 4);
+	}
+
+	#[test]
+	fn test_blizzard_reccurrence() {
+		let valley = example_valley();
+		let mut xp = Expedition::new(&valley);
+		let mut srep = show_expedition(&xp);
+		let mut archive = HashMap::new();
+		let mut n = 0;
+
+		while !archive.contains_key(&srep) {
+			archive.insert(srep, n);
+			xp.time += 1;
+			srep = show_expedition(&xp);
+			n += 1;
+		}
+
+		let north_recurr = xp.valley.north_wall - xp.valley.south_wall - 1;
+		let east_recurr = xp.valley.east_wall - xp.valley.west_wall - 1;
+		// We should use GCD here but it's not in the standard lib
+		// see https://users.rust-lang.org/t/why-no-gcd-in-standard-lib/36490
+		let max_recurr = north_recurr * east_recurr;
+		assert_eq!(max_recurr % n, 0);
+	}
+
+	#[test]
+	fn test_compare_death() {
+		let valley = example_valley();
+
+		let mut xp1 = Expedition::new(&valley);
+		xp1 = expedition_dies(xp1);
+
+		let mut xp2 = Expedition::new(&valley);
+
+		// xp1 > xp2 because xp1 reaches the end
+		assert!(xp1 > xp2);
+
+		xp2.curr_pos = valley.exit_pos;
+		// xp2 > xp1 because both exited but xp2.time < xp1.time
+		assert!(xp2 > xp1);
 	}
 
 }
