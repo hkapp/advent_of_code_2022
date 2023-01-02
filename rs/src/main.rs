@@ -5,6 +5,7 @@ mod dec20;
 mod dec21;
 mod dec22;
 mod dec23;
+mod dec24;
 
 #[cfg(test)]
 #[macro_use]
@@ -27,6 +28,7 @@ fn main() {
         "day21" => dec21::run(file_content),
         "day22" => dec22::run(file_content),
         "day23" => dec23::run(file_content),
+        "day24" => dec24::run(file_content),
         _       => panic!("Not implemented yet: {}", day),
     };
 }
