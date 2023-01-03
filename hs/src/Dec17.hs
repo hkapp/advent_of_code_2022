@@ -12,7 +12,7 @@ import Data.Set(Set)
 import qualified Data.Set as Set
 import Data.Int(Int64)
 import Data.List(genericTake)
-import Data.Map(Map)
+import Data.Map(Map, (!))
 import qualified Data.Map as Map
 
 import System.IO.Unsafe(unsafePerformIO)
@@ -328,15 +328,6 @@ oneRound =
     put $ tetrisRound round
     freezePiece $ pieceRound round
 
--- TODO remove
--- resetGas :: State Tetris ()
--- resetGas =
-  -- do
-    -- tetris <- get
-    -- let newGasRotation = Ring.reset (gasRotation tetris)
-    -- let newTetris = tetris { gasRotation = newGasRotation }
-    -- put newTetris
-
 generatePiece :: State Tetris Piece
 generatePiece =
   do
@@ -432,7 +423,34 @@ awfulPrint x y = unsafePerformIO (print x >>= (const (return y)))
 -- Number of dirs in the input gas ring: 10091
 --   this is prime
 task2 :: Ring Gas -> Coord
-task2 = task1Param 1000000
+task2 = highestRock . stopAfterManyManyRounds 1000000000000
+
+stopAfterManyManyRounds :: Int64 -> Ring Gas -> Tetris
+stopAfterManyManyRounds n gas =
+  let
+    recurrence = findRecurrenceTime gas
+    (closeToTheEnd, remainingSteps) = fastWarp n recurrence
+  in
+    finishAfterWarp remainingSteps closeToTheEnd
+
+fastWarp :: Int64 -> Recurrence -> (Tetris, Int64)
+fastWarp n (Recurrence recurrenceStartTime recurrenceEndTime recurrenceHeightIncrease recurrenceEndState) =
+  let
+    remaining = n - recurrenceEndTime
+    warpUnit = recurrenceEndTime - recurrenceStartTime
+    (warpCount, nonWarped) = remaining `divMod` warpUnit
+    warpElevation = warpCount * recurrenceHeightIncrease
+  in
+    (elevateTetris recurrenceEndState warpElevation, nonWarped)
+
+elevateTetris :: Tetris -> Coord -> Tetris
+elevateTetris tetris elevation = tetris { rockPositions = Set.map (elevatePos elevation) $ rockPositions tetris }
+
+elevatePos :: Coord -> Pos -> Pos
+elevatePos elevation = moveToPos (newPosHV 0 elevation)
+
+finishAfterWarp :: Int64 -> Tetris -> Tetris
+finishAfterWarp remRounds tetris = execState (doNRounds remRounds) tetris
 
 data Archive = Archive {
   archiveEnabled    :: Bool,
@@ -441,13 +459,15 @@ data Archive = Archive {
   archiveTime       :: Int64
   }
 
-{- We loop if the last couple of rows are the same AND the gas ring state is the same -}
+{- We loop if the last couple of rows are the same
+   AND the gas ring state is the same
+   AND the shape dispenser state is the same
+-}
 type ArmPos = Int
-type Key = (Set Pos, ArmPos)
+type Key = (Set Pos, ArmPos, ArmPos)
 
 data Record = Record {
   recordTetris :: Tetris,
-  -- recordHeight :: Coord,
   recordTime   :: Time
   }
 
@@ -465,11 +485,11 @@ tryOneRecurrence =
     tetris0 <- gets archiveCurrTetris
     let tetris1 = execState oneRound tetris0
     putArchiveCurrTetris tetris1
+    increaseArchiveTime
     enabled <- tryEnableArchive
     if enabled && recurrenceCandidate tetris1
       then checkRecurrence
       else return Nothing
-    -- TODO update time
 
 putArchiveCurrTetris :: Tetris -> State Archive ()
 putArchiveCurrTetris tetris =
@@ -477,15 +497,21 @@ putArchiveCurrTetris tetris =
     archive <- get
     put $ archive { archiveCurrTetris = tetris }
 
+increaseArchiveTime :: State Archive ()
+increaseArchiveTime =
+  do
+    prevTime    <- gets archiveTime
+    prevArchive <- get
+    put $ prevArchive { archiveTime = prevTime + 1 }
+
 recurrenceCandidate :: Tetris -> Bool
 recurrenceCandidate tetris =
   let
     sizeThreshold = 14 -- equivalent to two full rows
     size = length $ rockPositions tetris
   in
-    size <= sizeThreshold
+    size >= sizeThreshold
 
--- TODO remove the current height when inserting into the map
 tryEnableArchive :: State Archive Bool
 tryEnableArchive =
   do
@@ -501,11 +527,14 @@ tryEnableArchive =
               do
                 archive <- get
                 put $ archive { archiveEnabled = True }
-                return True
+                (awfulPrint ("Enabled the archive at time " ++ (show $ archiveTime archive)) return) True
             else return False
 
 data Recurrence = Recurrence {
-  sdflk :: ()
+  recurrenceStartTime      :: Time,
+  recurrenceEndTime        :: Time,
+  recurrenceHeightIncrease :: Time,
+  recurrenceEndState       :: Tetris
   }
 
 -- Here we assume that we are enabled and that the current tetris is a valid candidate
@@ -522,15 +551,29 @@ checkRecurrence =
           return Nothing
 
 buildRecurrence :: State Archive Recurrence
-buildRecurrence = return $ Recurrence ()
+buildRecurrence =
+  do
+    currKey           <- buildCurrKey
+    records           <- gets archiveRecords
+    currTetris        <- gets archiveCurrTetris
+    recurrenceEndTime <- gets archiveTime
+    let
+      recordStart = records ! currKey
+      startTetris = recordTetris recordStart
+      recurrenceStartTime = recordTime recordStart
+      recurrenceHeightIncrease = (highestRock currTetris) - (highestRock startTetris)
+      recurrenceEndState = currTetris
+      in
+      return $ Recurrence recurrenceStartTime recurrenceEndTime recurrenceHeightIncrease recurrenceEndState
 
 buildCurrKey :: State Archive Key
 buildCurrKey =
   do
     tetris <- gets archiveCurrTetris
     let rocks = heightInsensitive $ rockPositions tetris
-    let armPos = Ring.armPos $ gasRotation tetris
-    return (rocks, armPos)
+    let gasState = Ring.armPos $ gasRotation tetris
+    let shapeState = Ring.armPos $ shapeGenerator tetris
+    return (rocks, gasState, shapeState)
 
 heightInsensitive :: Set Pos -> Set Pos
 heightInsensitive heightRocks =
