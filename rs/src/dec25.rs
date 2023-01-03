@@ -91,6 +91,26 @@ pub fn run(file_content: Input<File>) {
 	//}
 //}
 
+/* Snafu */
+
+type Digit = i8;
+
+struct Snafu {
+	digits: Vec<Digit>
+}
+
+type Decimal = i32;
+
+impl Snafu {
+	fn as_decimal(&self) -> Decimal {
+		self.digits
+			.iter()
+			.fold((1, 0 as Decimal),
+				|(pow, sum), dig| (pow*5, sum + *dig as Decimal * pow))
+			.1
+	}
+}
+
 /* Unit tests */
 
 #[cfg(test)]
