@@ -91,6 +91,29 @@ pub fn run(file_content: Input<File>) {
 	//}
 //}
 
+impl FromStr for Snafu {
+	type Err = String;
+
+	fn from_str(s: &str) -> Result<Self, <Self as FromStr>::Err> {
+		fn parse_digit(c: char) -> Result<Digit, String> {
+			match c {
+				'2' => Ok(2),
+				'1' => Ok(1),
+				'0' => Ok(0),
+				'-' => Ok(-1),
+				'=' => Ok(-2),
+				_   => Err(format!("Invalid digit: {:?}", c)),
+			}
+		}
+
+		s.chars()
+			.map(parse_digit)
+			.rev()
+			.collect::<Result<Vec<Digit>, Self::Err>>()
+			.map(|digits| Snafu { digits } )
+	}
+}
+
 /* Snafu */
 
 type Digit = i8;
@@ -127,234 +150,33 @@ mod tests {
     //lazy_static! {
         //static ref EXAMPLE_VALLEY:    Valley = parse_str(EXAMPLE);
     //}
-	fn example_valley() -> Valley {
-		parse_str(EXAMPLE)
-	}
 
-    fn parse_str(s: &str) -> Valley {
-		parse(io::BufReader::new(s.as_bytes()))
-	}
+    //fn parse_str(s: &str) -> Valley {
+		//parse(io::BufReader::new(s.as_bytes()))
+	//}
 
     #[test]
-    fn validate_task1() {
-        assert_eq!(task1(&example_valley()), 18);
+    fn test_as_decimal() {
+		fn test_one(s: &str, n: Decimal) {
+			assert_eq!(s.parse::<Snafu>().unwrap().as_decimal(), n);
+		}
+
+        test_one("1", 1);
+        test_one("2", 2);
+        test_one("1=", 3);
+		test_one("1-",          4  );
+		test_one("10",          5  );
+		test_one("11",          6  );
+		test_one("12",          7  );
+		test_one("2=",          8  );
+		test_one("2-",          9  );
+		test_one("20",         10  );
+		test_one("1=0",         15  );
+		test_one("1-0",         20  );
+		test_one("1=11-2",       2022  );
+		test_one("1-0---0",      12345  );
+		test_one("1121-1110-1=0",  314159265);
     }
 
-    #[test]
-    fn validate_task2() {
-        assert_eq!(task2(example_valley()), 54);
-    }
-
-	fn assert_fmt<T: Eq + std::fmt::Debug + std::fmt::Display>(left: T, right: T) {
-		assert_eq!(left, right, "\nleft:\n{}\nright:\n{}\n", left, right);
-	}
-
-    #[test]
-    fn validate_task1_steps() {
-		let valley = example_valley();
-		let mut xp = Expedition::new(&valley);
-		let expected = "#E######
-#>>.<^<#
-#.<..<<#
-#>v.><>#
-#<^v^^>#
-######.#";
-		assert_fmt::<&str>(&show_expedition(&xp), expected);
-
-		/* Minute 1, move down: */
-		xp.move_to(xp.curr_pos.move_in_dir(South));
-		xp.time += 1;
-		let expected = "#.######
-#E>3.<.#
-#<..<<.#
-#>2.22.#
-#>v..^<#
-######.#";
-		assert_fmt::<&str>(&show_expedition(&xp), expected);
-
-		/* Minute 2, move down: */
-		xp.move_to(xp.curr_pos.move_in_dir(South));
-		xp.time += 1;
-		let expected = "#.######
-#.2>2..#
-#E^22^<#
-#.>2.^>#
-#.>..<.#
-######.#";
-		assert_fmt::<&str>(&show_expedition(&xp), expected);
-	}
-
-	impl Into<char> for Dir {
-		fn into(self) -> char {
-			match self {
-				North => '^',
-				South => 'v',
-				East  => '>',
-				West  => '<',
-			}
-		}
-	}
-
-	fn show_expedition(xp: &Expedition) -> String {
-		let mut buf = String::new();
-		for north in (xp.valley.south_wall..(xp.valley.north_wall+1)).rev() {
-			for east in xp.valley.west_wall..(xp.valley.east_wall+1) {
-				let pos = Pos { north, east };
-				let c =
-					if xp.valley.is_valid_pos(pos) {
-						if xp.curr_pos == pos {
-							'E'
-						}
-						else {
-							let empty_vec = Vec::new();
-							let curr_blizzards = xp.blizzards();
-							let blizzards_here = curr_blizzards.get_vec(&pos).unwrap_or(&empty_vec);
-							match blizzards_here.len() {
-								0 => '.',
-								1 => (*blizzards_here.get(0).unwrap()).into(),
-								n => {
-									assert!(n < 10);
-									format!("{}", n).chars().next().unwrap()
-								}
-							}
-						}
-					}
-					else {
-						// This must be a wall
-						'#'
-					};
-				buf.push(c);
-			}
-			if north > xp.valley.south_wall {
-				buf.push('\n');
-			}
-		}
-		return buf;
-	}
-
-    #[test]
-    fn test_blizzard_wraparound() {
-		let simpler_example: &str = "#.######
-#....^>#
-#......#
-#<.....#
-#....v.#
-######.#";
-		let valley = parse_str(simpler_example);
-		let mut xp = Expedition::new(&valley);
-		let expected = "#E######
-#....^>#
-#......#
-#<.....#
-#....v.#
-######.#";
-		assert_fmt::<&str>(&show_expedition(&xp), expected);
-
-		xp.time += 1;
-		let expected = "#E######
-#>...v.#
-#......#
-#.....<#
-#....^.#
-######.#";
-		assert_fmt::<&str>(&show_expedition(&xp), expected);
-	}
-
-	#[test]
-	fn test_multi_iter() {
-		let mut multi_map = MultiMap::new();
-		multi_map.insert(2 as u8, 2 as u8);
-		multi_map.insert(3 as u8, 3 as u8);
-		multi_map.insert(4 as u8, 4 as u8);
-		multi_map.insert(4 as u8, 2 as u8);
-
-		assert_eq!(multi_map.iter().count(), 3);
-		assert_eq!(multi_map.iter_all().count(), 3);
-		assert_eq!(multi_iter(&multi_map).count(), 4);
-	}
-
-	#[test]
-	fn test_multi_map_collect() {
-		let mut multi_map = MultiMap::new();
-		multi_map.insert(2 as u8, 2 as u8);
-		multi_map.insert(3 as u8, 3 as u8);
-		multi_map.insert(4 as u8, 4 as u8);
-		multi_map.insert(4 as u8, 2 as u8);
-
-		let new_map: MultiMap<u8, u8> =
-			multi_iter(&multi_map)
-				.map(|(k, v)| (*k, *v))
-				.collect();
-
-		assert_eq!(new_map, multi_map);
-	}
-
-	#[test]
-	fn test_multi_map_len() {
-		let mut multi_map = MultiMap::new();
-		multi_map.insert(2 as u8, 2 as u8);
-		multi_map.insert(3 as u8, 3 as u8);
-		multi_map.insert(4 as u8, 4 as u8);
-		multi_map.insert(4 as u8, 2 as u8);
-
-		assert_eq!(multi_map.len(), 3);
-		assert_eq!(multi_map_len(&multi_map), 4);
-	}
-
-	#[test]
-	fn test_blizzard_reccurrence() {
-		let valley = example_valley();
-		let mut xp = Expedition::new(&valley);
-		let mut srep = show_expedition(&xp);
-		let mut archive = HashMap::new();
-		let mut n = 0;
-
-		while !archive.contains_key(&srep) {
-			archive.insert(srep, n);
-			xp.time += 1;
-			srep = show_expedition(&xp);
-			n += 1;
-		}
-
-		let north_recurr = xp.valley.north_wall - xp.valley.south_wall - 1;
-		let east_recurr = xp.valley.east_wall - xp.valley.west_wall - 1;
-		// We should use GCD here but it's not in the standard lib
-		// see https://users.rust-lang.org/t/why-no-gcd-in-standard-lib/36490
-		let max_recurr = north_recurr * east_recurr;
-		assert_eq!(max_recurr % n, 0);
-	}
-
-	#[test]
-	fn test_compare_death() {
-		let valley = example_valley();
-
-		let mut xp1 = Expedition::new(&valley);
-		xp1 = expedition_dies(xp1);
-
-		let mut xp2 = Expedition::new(&valley);
-
-		// xp1 > xp2 because xp1 reaches the end
-		assert!(xp1 > xp2);
-
-		xp2.curr_pos = valley.exit_pos;
-		// xp2 > xp1 because both exited but xp2.time < xp1.time
-		assert!(xp2 > xp1);
-	}
-
-	#[test]
-	fn test_compare() {
-		let valley = example_valley();
-
-		let xp1 = Expedition::new(&valley);
-
-		let mut xp2 = Expedition::new(&valley);
-		xp2.time += 1;
-		// xp2 is worse than xp1 (waited in place)
-		assert!(xp1 > xp2);
-
-		xp2.move_to(xp2.curr_pos.move_in_dir(South));
-		// xp2 is better than xp1 (it actually moved towards the goal)
-		assert!(xp2 > xp1);
-	}
 
 }
