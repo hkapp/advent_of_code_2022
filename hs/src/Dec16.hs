@@ -46,6 +46,12 @@ run input =
     -- AStarStats {stopEarlyCount = 9625, fullPathsCount = 5, nodesExpanded = 10596}
     -- With even smarter potential calculation: (taking into account the distances between the remaining rooms)
     -- AStarStats {stopEarlyCount = 3047, fullPathsCount = 5, nodesExpanded = 3355}
+    -- With full Ord:
+    -- AStarStats {stopEarlyCount = 46301, fullPathsCount = 96, nodesExpanded = 52346}
+    -- With full Eq:
+    -- AStarStats {stopEarlyCount = 24798, fullPathsCount = 55, nodesExpanded = 27730}
+    -- Without duplicates in the PQueue:
+    -- AStarStats {stopEarlyCount = 24798, fullPathsCount = 55, nodesExpanded = 27730}
     test "task1 (real input)" 2077 res1
 
     putStrLn "Task 2:"
@@ -136,7 +142,7 @@ data AStarSearch n = AStarSearch {
   astarStats     :: AStarStats
   }
 
-type AStarQueue n = PQueue n (RevPath n)
+type AStarQueue n = Map n (RevPath n)
 
 type RevPath n = [n]
 
@@ -182,7 +188,7 @@ astar expandFrom stopEarly start =
     stopCriteria (_, s) = PQ.null $ astarWorkQueue s
 
     -- initState :: AStarSearch n
-    initState = AStarSearch Nothing (PQ.singleton start [start]) initStats
+    initState = AStarSearch Nothing (Map.singleton start [start]) initStats
 
 -- TODO remove
 debugPrint :: String -> a -> a
@@ -211,7 +217,7 @@ getBestPath :: AStarState n (Maybe (RevPath n))
 getBestPath = gets astarCurrBest
 
 popNextNode :: (Ord n) => AStarState n (RevPath n)
-popNextNode = fmap snd $ modPQ PQ.popMax
+popNextNode = fmap snd $ modPQ Map.deleteFindMax
 
 pushNodes :: (Ord n) => [RevPath n] -> AStarState n ()
 pushNodes ns = modPQ f
@@ -220,7 +226,9 @@ pushNodes ns = modPQ f
       let
         nsWithKey = map (\n -> (headDbg "133" n, n)) ns
       in
-        ((), PQ.pushAll nsWithKey pq)
+        ((), pushAll nsWithKey pq)
+
+    pushAll xs = Map.union (Map.fromList xs)
 
 modPQ :: (AStarQueue n -> (a, AStarQueue n)) -> AStarState n a
 modPQ f =
@@ -311,7 +319,11 @@ data Worker = Worker {
     currPos  :: Room,
     timeLeft :: Minutes
   }
-  deriving Show
+  deriving (Show, Eq)
+
+instance Ord Worker where
+  w1 <= w2 = (timeLeft w1) <= (timeLeft w2)
+              || (currPos w1) <= (currPos w2)
 
 type Steam = Int
 type Minutes = Int
@@ -321,9 +333,13 @@ type Minutes = Int
 -}
 instance Eq Flux where
   fx == fy = (steamSoFar fx) == (steamSoFar fy)
+              && (workers fx) == (workers fy)
+              && (closedValves fx) == (closedValves fy)
 
 instance Ord Flux where
-  compare fx fy = compare (steamSoFar fx) (steamSoFar fy)
+  fx <= fy = (steamSoFar fx) <= (steamSoFar fy)
+              || (workers fx) <= (workers fy)
+              || (closedValves fx) <= (closedValves fy)
 
 -- Flux moves
 
