@@ -3,7 +3,7 @@
 ⎕IO ← 0
 
 td ← 'A Y' 'B X' 'C Z'
-rd←⊃⎕NGET '/home/hugo/code/advent_of_code_2022/data/day2.data.txt' 1
+rd←⊃⎕NGET 'data/day2.data.txt' 1
 
 parse←{
     inm←(↑⍵)[;0 2]
